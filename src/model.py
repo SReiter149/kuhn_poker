@@ -1,11 +1,9 @@
-from torch.nn import Linear
+import torch.nn as N
 
-class Player1:
+class KuhnBot:
     def __init__(self):
         pass
 
-class Player2:
-    def __init__(self):
-        pass
+
 
     
