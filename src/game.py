@@ -9,7 +9,6 @@ from rich.console import Console
 class KuhnPoker():
     def __init__(self,):
         self.reset()
-        self.turn = 0
 
     def deal(self):
         card1, card2 = np.random.choice(3, size = 2, replace = False)
@@ -31,6 +30,7 @@ class KuhnPoker():
         - state
         - turn
         """
+        self.turn = 0
         self.history = np.array([[0,0], [0,0], [0,0]], dtype = np.float32) # action1, action2, action3, [1,0] is pass/fold [0,1] is bet/call and [0,0] is no action
         self.cards = np.array([[0,0,0], [0,0,0]]) # one-hot encoding of cards
         
@@ -75,6 +75,8 @@ class KuhnPoker():
         - 0 is fold/pass
         - 1 is bet/call
         """
+        assert action.dtype == np.int64
+
         self.history[self.turn][action] = 1
         terminal, winner, pot = self.check_history()
         state = self.get_state()
