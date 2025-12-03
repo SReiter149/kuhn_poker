@@ -36,6 +36,7 @@ def play_game(players, game):
     memory = [
         {
             "rewards": [],
+            'actions': [],
             "observations": [],
             "probabilities": [],
         } for i in range(len(players))
@@ -47,9 +48,15 @@ def play_game(players, game):
 
     while not terminal:
         player = turn % 2
+        # pdb.set_trace()
+        if player == 0:
+            masked_state = torch.cat((state[:3], state[6:]), dim = 0)
+        else: # player == 1
+            masked_state = state[3:]
+
 
         # get active players probability distribution and action
-        action_probabilities = players[player](state)
+        action_probabilities = players[player](masked_state)
         dist = Categorical(logits=action_probabilities)
         action = dist.sample()                         
         log_prob = dist.log_prob(action).squeeze(0)
@@ -68,22 +75,25 @@ def play_game(players, game):
             memory[(player + 1) % 2]['probabilities'].append(last_log_prob)
             memory[(player + 1) % 2]['observations'].append(last_state)
             memory[(player + 1) % 2]['rewards'].append(reward[(player + 1) % 2])
+            memory[(player + 1) % 2]['actions'].append(last_action)
 
         # set up for next turn
         last_log_prob = log_prob
         last_state = state
+        last_action = action
         turn += 1
 
     # save the last turn for the active player
     memory[player]['probabilities'].append(last_log_prob)
     memory[player]['observations'].append(last_state)
     memory[player]['rewards'].append(reward[player])
+    memory[player]['actions'].append(last_action)
     
     # stack all lists
     for player in range(2):
         for key in memory[player].keys():
             memory[player][key] = torch.stack(memory[player][key])
-    return memory
+    return memory, last_state[:6]
 
 
 def train(config, players):
@@ -92,28 +102,34 @@ def train(config, players):
 
     returns:
     - log (dict):
-        - player1_rewards (list): the rewards for the first player
-        - player1_score (list): the sum of the rewards up to that point
+        - p1_rewards (list): the rewards for the first player
+        - p1_score (list): the sum of the rewards up to that point
     """
 
     # set up
     optimizers = [AdamW(players[i].parameters()) for i in range(len(players))]
     log = {
-        'player1_rewards': [],
-        'player1_score': []
+        'p1_rewards': [],
+        'p1_score': [],
+        'deal': [],
+        'actions': [[],[]],
     }
     progress_bar = tqdm(range(config['train_steps']))
 
     for game_id in progress_bar:
         # play a game
-        memory = play_game(players, kuhn)
+        memory, deal = play_game(players, kuhn)
+        log['deal'].append(deal)
+        log['actions'][0].append(memory[0]['actions'])
+        log['actions'][1].append(memory[1]['actions'])
+
 
         # save results to log
-        log['player1_rewards'].append(memory[0]['rewards'][-1])
+        log['p1_rewards'].append(memory[0]['rewards'][-1])
         if game_id >= 1:
-            log['player1_score'].append(log['player1_score'][-1] + log['player1_rewards'][-1])
+            log['p1_score'].append(log['p1_score'][-1] + log['p1_rewards'][-1])
         else:
-            log['player1_score'].append(log['player1_rewards'][-1])
+            log['p1_score'].append(log['p1_rewards'][-1])
             
         # back propogation
         for player in range(len(players)):
@@ -139,20 +155,21 @@ if __name__ == '__main__':
             'replay_buffer_capacity': 1_000,
             'minibatch_size': 10,
             'warmup_steps': 100,
-            'train_steps': 100_000
+            'train_steps': 10_000,
+            'log_window': 1_000
         }
 
         kuhn = KuhnPoker()
 
         # make players
         player1 = Sequential(
-            Linear(12, 10),
+            Linear(9, 10),
             Linear(10, 10),
             Linear(10, 6),
             Linear(6,2)
         )
         player2 = Sequential(
-            Linear(12, 10),
+            Linear(9, 10),
             Linear(10, 10),
             Linear(10, 6),
             Linear(6,2)
@@ -167,7 +184,13 @@ if __name__ == '__main__':
         log = train(config, players)
         
         # visualize
-        plt.plot(log['player1_score'])
+        kernel = torch.ones(config['log_window']) / config['log_window']
+        rewards = torch.tensor(log['p1_rewards'], dtype=torch.float32)
+        average_score = torch.conv1d(
+            rewards.view(1,1,-1),
+            kernel.view(1,1,-1)
+        ).view(-1)
+        plt.plot(average_score)
         plt.show()
 
         pdb.set_trace()
