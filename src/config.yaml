@@ -1,0 +1,11 @@
+game:
+  # If true, Player 2 is a hardcoded Optimal Bot
+  # If false, Player 2 is a Neural Network learning from scratch
+  p2_deterministic: true
+
+training:
+  device: "cpu"
+  train_steps: 500000
+  lr: 0.002
+  batch_size: 16
+  log_window: 10000
