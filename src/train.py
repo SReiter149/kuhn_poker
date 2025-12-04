@@ -192,62 +192,73 @@ if __name__ == '__main__':
             ReLU(),
             Linear(6,2)
         )
-        # player3 = Sequential(
-        #     Linear(9, 12),
-        #     ReLU(),
-        #     Linear(12, 10),
-        #     ReLU(),
-        #     Linear(10, 6),
-        #     ReLU(),
-        #     Linear(6,2)
-        # )
-        # player4 = Sequential(
-        #     Linear(9, 12),
-        #     ReLU(),
-        #     Linear(12, 10),
-        #     ReLU(),
-        #     Linear(10, 6),
-        #     ReLU(),
-        #     Linear(6,2)
-        # )
+        player3 = Sequential(
+            Linear(9, 12),
+            ReLU(),
+            Linear(12, 10),
+            ReLU(),
+            Linear(10, 6),
+            ReLU(),
+            Linear(6,2)
+        )
+        player4 = Sequential(
+            Linear(9, 12),
+            ReLU(),
+            Linear(12, 10),
+            ReLU(),
+            Linear(10, 6),
+            ReLU(),
+            Linear(6,2)
+        )
 
         players = [
             player1,
             player2,
-            # player3,
-            # player4
+            player3,
+            player4
         ]
 
         # train
         log = train(config, players)
         # pdb.set_trace()
 
-        # print analysis
-        analyze_strategy(players[0])
-        
-        # visualize
         fig, ax = plt.subplots(2,2)
+        colors = ['red','orange','yellow', 'green', 'blue', 'purple']
 
-        as_player1 = log['player1_ids'] == 0
-        as_player2 = log['player2_ids'] == 0
+        for player_id in range(len(players)):
+            # print analysis
+            print(f'analysis for player {player_id}')
+            analyze_strategy(players[player_id])
+            
+            # visualize
+            
 
-        rewards = log['rewards'][as_player1 | as_player2]
-        rewards[as_player2] *= -1
+            as_player1 = log['player1_ids'] == player_id
+            as_player2 = log['player2_ids'] == player_id
 
-        # plot average rewards
-        kernel = torch.ones(config['log_window']) / config['log_window']
-        rewards = torch.tensor(rewards, dtype=torch.float32)
-        average_score = torch.conv1d(
-            rewards.view(1,1,-1),
-            kernel.view(1,1,-1)
-        ).view(-1)
-        ax[0,0].plot(average_score, label = 'player1 rewards')
-        ax[0,0].axhline(y=float(1/18), color='r', linestyle='--', label='Nash (P1 = 1/18)')
-        
-        # ax[0,0].set_yscale('log')
+            # model’s reward at each timestep, with sign
+            signed_all = torch.where(as_player1, 
+                                    log['rewards'],        # when P1: +reward
+                                    -log['rewards'])       # otherwise: -reward
 
-        ax[0,1].plot(torch.cumsum(rewards, dim = 0))
-        plt.legend()
+            # but keep only timesteps where it actually played (P1 or P2)
+            mask = as_player1 | as_player2
+            rewards = signed_all[mask]
+
+            # plot average rewards
+            kernel = torch.ones(config['log_window']) / config['log_window']
+            rewards = torch.tensor(rewards, dtype=torch.float32)
+            average_score = torch.conv1d(
+                rewards.view(1,1,-1),
+                kernel.view(1,1,-1)
+            ).view(-1)
+            ax[0,0].plot(average_score, label = f'{player_id} rewards', c = colors[player_id])
+            # ax[0,0].axhline(y=float(1/18), color='r', linestyle='--', label='Nash (P1 = 1/18)')
+            
+            # ax[0,0].set_yscale('log')
+
+            ax[0,1].plot(torch.cumsum(rewards, dim = 0), label = f'{player_id} score',c = colors[player_id])
+        fig.legend()
         plt.show()
 
         pdb.set_trace()
