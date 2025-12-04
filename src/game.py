@@ -16,10 +16,10 @@ class KuhnPoker():
         self.cards[1][card2] = 1
 
     def get_state(self):
-        cards = self.cards.flatten()
-        history = self.history.flatten()
+        cards = self.cards.flatten() # (6,)
+        history = self.history.flatten() # (6,)
 
-        state = np.concatenate([cards, history])
+        state = np.concatenate([cards, history]) # (12,)
 
         return state
 
@@ -42,6 +42,9 @@ class KuhnPoker():
     
     def check_history(self):
         """
+        action:
+        - [1,0] is fold/pass
+        - [0,1] is bet/call
         returns:
         - terminal (bool)
         - winner (int): 0 is showdonw, 1 is player 1 won, 2 is player 2 won
@@ -49,15 +52,14 @@ class KuhnPoker():
         """
         if (self.history[:2] == np.array([[1,0], [1,0]], dtype = np.float32)).all():
             return (True, 0, 1)
+        if (self.history[:2] == np.array([[0,1], [1,0]], dtype = np.float32)).all():
+            return (True, 1, 1)
+        if (self.history[:2] == np.array([[0,1], [0,1]], dtype = np.float32)).all():
+            return (True, 0, 2)
         if (self.history == np.array([[1,0], [0,1], [1,0]], dtype = np.float32)).all():
             return (True, 2, 1)
         if (self.history == np.array([[1,0], [0,1], [0,1]], dtype = np.float32)).all():
             return (True, 0, 2)
-        if (self.history[:2] == np.array([[0,1], [1,0]], dtype = np.float32)).all():
-            return (True, 1, 1)
-        if (self.history[:2] == np.array([[0,1], [0,1]], dtype = np.float32)).all():
-            return (True, 0, 1)
-
         return (False, None, None)
     
     def showdown(self):
@@ -84,7 +86,6 @@ class KuhnPoker():
         if terminal:
             if winner == 0:
                 winner = self.showdown()
-
             if winner == 1:
                 reward = np.array([pot, -pot], dtype = np.float32)
             elif winner == 2:
