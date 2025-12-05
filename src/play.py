@@ -212,16 +212,20 @@ def analyze_p1_strategy(player_model, device='cpu'):
     p_bet_j = get_bet_prob(0, [-1, -1, -1])
     p_bet_q = get_bet_prob(1, [-1, -1, -1])
     p_bet_k = get_bet_prob(2, [-1, -1, -1])
+    p_call_j = get_bet_prob(0, [0, 1, -1])
     p_call_q = get_bet_prob(1, [0, 1, -1])
+    p_call_k = get_bet_prob(2, [0, 1, -1])
 
-    print(f"P(Bet | Jack)  [Expected {char_alpha}]     : {p_bet_j:.4f}")
-    print(f"P(Bet | Queen) [Expected 0.0]   : {p_bet_q:.4f}")
-    print(f"P(Bet | King)  [Expected 3{char_alpha}]    : {p_bet_k:.4f}")
-    print(f"P(Call| Queen) [Expected {char_alpha}+1/3] : {p_call_q:.4f}")
+    print(f"P(Bet | Jack): {p_bet_j:.4f}")
+    print(f"P(Bet | Queen): {p_bet_q:.4f}")
+    print(f"P(Bet | King): {p_bet_k:.4f}")
+    print(f"P(Call| Jack): {p_call_j:.4f}")
+    print(f"P(Call| Queen): {p_call_q:.4f}")
+    print(f"P(Call| King): {p_call_k:.4f}")
 
     alpha = p_bet_j
-    
-    print("\n--- Checking Equilibrium Consistency ---")
+    # 
+    # print("\n--- Checking Equilibrium Consistency ---")
     print(f"Estimated {char_alpha} (from Jack): {alpha:.4f}")
     
     in_range = 0.0 <= alpha <= (1.0/3.0 + 0.05)
@@ -318,7 +322,12 @@ if __name__ == "__main__":
     smoothed = exponential_moving_average(history, window)
 
     print("Final P1 Average Reward:", np.mean(history[-100:]))
-    
+
+    alpha = analyze_p1_strategy(p1, config['training']['device'])
+    print(f"Estimated Alpha: {alpha:.4f}")
+    ev = calculate_exploitability(p1, config['training']['device'])
+    print(f"Exploitability EV: {ev:.4f} (Ideal: -0.0556)")
+  
     plt.figure(figsize=(10, 5))
     plt.plot(smoothed)
     plt.axhline(y=float(-1/18), color='r', linestyle='--', label='Nash (P1 = -1/18)')
@@ -327,8 +336,3 @@ if __name__ == "__main__":
     plt.ylabel("P1 Reward")
     plt.legend()
     plt.show()
-
-    alpha = analyze_p1_strategy(p1, config['training']['device'])
-    print(f"Estimated Alpha: {alpha:.4f}")
-    ev = calculate_exploitability(p1, config['training']['device'])
-    print(f"Exploitability EV: {ev:.4f} (Ideal: -0.0556)")
