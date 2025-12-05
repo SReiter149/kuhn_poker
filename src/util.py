@@ -1,6 +1,7 @@
 import torch
 from abc import ABC, abstractmethod
 from typing import Optional, Iterable
+import scipy
 
 def get_seed(
     upper=1 << 31
@@ -485,4 +486,65 @@ class AdamW(Optimizer):
           + (1 - second_moment_decay)
           * parameter.grad.square()
         )
+
+
+def welch_one_sided(
+    source: torch.Tensor,
+    target: torch.Tensor,
+    confidence_level=.8
+) -> torch.Tensor:
+    """
+    Performs Welch's t-test with null hypothesis: the expected value
+    of the random variable the target tensor collects samples of
+    is larger then the expected value
+    of the random variable the source tensor collects samples of.
+
+    In the tensors, dimensions after the first 
+    are considered batch dimensions.
+
+    Parameters
+    ----------
+    source : `torch.Tensor`
+        Source sample, of shape `(sample_size,) + batch_shape`.
+    target : `torch.Tensor`
+        Target sample, of shape `(sample_size,) + batch_shape`.
+    confidence_level : `float`, optional
+        Confidence level of the test. Default: `.8`.
+    Returns
+    -------
+    A Boolean tensor of shape `batch_shape` that is `False`
+    where the null hypothesis is rejected.
+    """
+    sample_num = len(source)
+    source_sample_mean, target_sample_mean = (
+        t.mean(dim=0)
+        for t in (source, target)
+    )
+    source_sample_var, target_sample_var = (
+        t.var(dim=0)
+        for t in (source, target)
+    )
+    var_sum = source_sample_var + target_sample_var
+
+    t = (
+        (target_sample_mean - source_sample_mean)
+      * (sample_num / var_sum).sqrt()
+    )
+
+    nu = (
+        var_sum.square()
+      * (sample_num - 1)
+      / (source_sample_var ** 2 + target_sample_var ** 2)
+    )
+
+    p = scipy.stats.t(
+        nu.cpu().numpy()
+    ).cdf(
+        t.cpu().numpy()
+    )
+
+    return torch.asarray(
+        p > confidence_level,
+        device=source.device
+    )
 

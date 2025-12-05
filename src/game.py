@@ -2,6 +2,8 @@ from torch import randperm
 # import torch
 import pdb
 import numpy as np
+import torch
+from torch.distributions import Categorical
 
 import pdb
 from rich.console import Console
@@ -95,6 +97,87 @@ class KuhnPoker():
         self.turn += 1
         reward = np.array([0,0], dtype = np.float32)
         return state, reward, terminal
+
+def play_game(player1,player2, game, config):
+    '''
+    play a single game given the players
+
+    ---
+    arguments:
+    - players (list of models): the players
+    - game (env): the enviornment to play in
+
+    ---
+    returns:
+    - memory (list of dict): a set of memories for each player
+        - rewards (list): the rewards after the next players move at each move
+        - observations (list): the observations for each player
+        - log_probs (list): the probability that the chosen move should have been chosen
+    '''
+
+    # set up  
+    players = [player1, player2]  
+    memory = [
+        {
+            "rewards": [],
+            'actions': [],
+            "observations": [],
+            "log_probs": [],
+        } for i in range(2)
+    ]
+    turn = 0
+    terminal = False
+    state,terminal = game.reset()
+    state = torch.asarray(state, device = config['device'], dtype = torch.float32)
+
+    while not terminal:
+        player = turn % 2
+        # pdb.set_trace()
+        if player == 0:
+            masked_state = torch.cat((state[:3], state[6:]), dim = 0)
+        else: # player == 1
+            masked_state = state[3:]
+
+
+        # get active players probability distribution and action
+        action_probabilities = players[player](masked_state)
+        dist = Categorical(logits=action_probabilities)
+        action = dist.sample()                         
+        log_prob = dist.log_prob(action).squeeze(0)
+
+        # play the move
+        state, reward, terminal = game.step(action.numpy())
+
+        # convert to torch
+        state = torch.asarray(state, device = config['device'], dtype = torch.float32)
+        reward = torch.asarray(reward, device = config['device'], dtype = torch.float32)
+        terminal = torch.asarray(terminal, device = config['device'], dtype = torch.bool)
+
+        # update last players buffer based on current players move
+        if turn >= 1:
+            assert len(last_log_prob.shape) == 0 
+            memory[(player + 1) % 2]['log_probs'].append(last_log_prob)
+            memory[(player + 1) % 2]['observations'].append(last_state)
+            memory[(player + 1) % 2]['rewards'].append(reward[(player + 1) % 2])
+            memory[(player + 1) % 2]['actions'].append(last_action)
+
+        # set up for next turn
+        last_log_prob = log_prob
+        last_state = state
+        last_action = action
+        turn += 1
+
+    # save the last turn for the active player
+    memory[player]['log_probs'].append(last_log_prob)
+    memory[player]['observations'].append(last_state)
+    memory[player]['rewards'].append(reward[player])
+    memory[player]['actions'].append(last_action)
+    
+    # stack all lists
+    for player in range(2):
+        for key in memory[player].keys():
+            memory[player][key] = torch.stack(memory[player][key])
+    return memory, last_state[:6]
 
 if __name__ == "__main__":
     try:   
