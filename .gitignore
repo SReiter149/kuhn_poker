@@ -3,5 +3,7 @@ venv/
 env/
 .venv/
 
-# Python cache files
+# Python cache files and .pyc
 **/__pycache__/
+*.py[cod]
+*$py.class
