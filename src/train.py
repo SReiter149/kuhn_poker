@@ -54,7 +54,7 @@ def train(config, players, player_configs):
         log['player1_ids'].append(player1_id)
         log['player2_ids'].append(player2_id)
             
-        # back propogation
+        # accumulate loss
         for player_num, player_id in enumerate([player1_id, player2_id]):
             # get undiscounted rewards (undiscounted since number of moves shouldn't matter)
             if len(memory[player_num]['rewards']) > 1:
@@ -62,34 +62,32 @@ def train(config, players, player_configs):
             else:
                 rewards = memory[player_num]['rewards'][0]
                 
-            # loss and backprop
-            # CHECK MAKE SURE THIS LOSS FUNCTION IS OPTIMAL
+            # loss
             game_loss = -1 * ((memory[player_num]['log_probs'] * rewards).sum())
             loss[player_num] = loss[player_num] + game_loss
 
-            if (game_id + 1) % config['batch_size'] == 0:
+        # backpropogate
+        if (game_id + 1) % config['batch_size'] == 0:
+            for player_num, player_id in enumerate([player1_id, player2_id]):
                 loss[player_num].backward()
                 optimizers[player_id].step()
 
-
-
-                if (game_id + 1) % config['pbt_frequency'] == 0:
-                    players, player_configs = pbt_step(
-                        config = config,
-                        players = players,
-                        player_configs= player_configs,
-                        rewards = log['rewards']
-                    )
-                    for player_id in range(len(players)):
-                        optimizers[player_id].update_config(player_configs[player_id])
-
                 optimizers[player_id].zero_grad()
-                loss = [torch.tensor(0.0, device=config['device']) for _ in range(2)]
+                loss[player_num] = torch.tensor(0.0, device=config['device'])
+            player1_id, player2_id = torch.randperm(len(players))[:2]
 
-                player1_id, player2_id = torch.randperm(len(players))[:2]
+            # pbt update
+            if (game_id + 1) % config['pbt_frequency'] == 0:
+                players, player_configs, optimizers = pbt_step(
+                    config = config,
+                    players = players,
+                    optimizers = optimizers,
+                    player_configs= player_configs,
+                    rewards = log['rewards']
+                )
+                # for player_id in range(len(players)):
+                #     optimizers[player_id].update_config(player_configs[player_id])
 
-    for key in ('player1_ids', 'player2_ids', "rewards"):
-        log[key] = torch.tensor(log[key])
     return log
 
 if __name__ == '__main__':
@@ -99,12 +97,12 @@ if __name__ == '__main__':
             'replay_buffer_capacity': 1_000,
             'minibatch_size': 10,
             # 'warmup_steps': 100,
-            'train_steps': 1_000_000,
+            'train_steps': 10_000,
             'log_window': 1_000,
-            'batch_size': 64,
+            'batch_size': 32,
             'pbt_frequency': 1024,
             'sample_size': 100,
-            'confidence_level': 0.1,
+            'confidence_level': 0.99,
             "hyperparameter_raw_init_distributions": {
                 "epsilon": torch.distributions.Uniform(
                     torch.tensor(-10, device="mps", dtype=torch.float32),
@@ -171,32 +169,78 @@ if __name__ == '__main__':
             Linear(6,2)
         )
         player2 = Sequential(
-            Linear(9, 32),
+            Linear(9, 12),
             ReLU(),
-            Linear(32, 8),
+            Linear(12, 10),
             ReLU(),
-            Linear(8,2)
+            Linear(10, 6),
+            ReLU(),
+            Linear(6,2)
         )
         player3 = Sequential(
-            Linear(9, 32),
+            Linear(9, 12),
             ReLU(),
-            Linear(32, 32),
+            Linear(12, 10),
             ReLU(),
-            Linear(32, 8),
+            Linear(10, 6),
             ReLU(),
-            Linear(8,2)
+            Linear(6,2)
         )
         player4 = Sequential(
-            Linear(9, 32),
+            Linear(9, 12),
             ReLU(),
-            Linear(32,2)
+            Linear(12, 10),
+            ReLU(),
+            Linear(10, 6),
+            ReLU(),
+            Linear(6,2)
+        )
+        player5 = Sequential(
+            Linear(9, 12),
+            ReLU(),
+            Linear(12, 10),
+            ReLU(),
+            Linear(10, 6),
+            ReLU(),
+            Linear(6,2)
+        )
+        player6 = Sequential(
+            Linear(9, 12),
+            ReLU(),
+            Linear(12, 10),
+            ReLU(),
+            Linear(10, 6),
+            ReLU(),
+            Linear(6,2)
+        )
+        player7 = Sequential(
+            Linear(9, 12),
+            ReLU(),
+            Linear(12, 10),
+            ReLU(),
+            Linear(10, 6),
+            ReLU(),
+            Linear(6,2)
+        )
+        player8 = Sequential(
+            Linear(9, 12),
+            ReLU(),
+            Linear(12, 10),
+            ReLU(),
+            Linear(10, 6),
+            ReLU(),
+            Linear(6,2)
         )
 
         players = [
             player1,
             player2,
             player3,
-            player4
+            player4,
+            player5,
+            player6,
+            player7,
+            player8
         ]
         player_configs = [
             dict(config) for _ in range(len(players))
@@ -207,31 +251,16 @@ if __name__ == '__main__':
         # pdb.set_trace()
 
         fig, ax = plt.subplots(2,2)
-        colors = ['red','orange','yellow', 'green', 'blue', 'purple']
+        colors = ['red','orange','yellow', 'green', 'blue', 'purple','teal', 'violet']
 
         for player_id in range(len(players)):
             # print analysis
             print(f'analysis for player {player_id}')
             analyze_strategy(players[player_id])
-            
-            # visualize
-            
-
-            as_player1 = log['player1_ids'] == player_id
-            as_player2 = log['player2_ids'] == player_id
-
-            # model’s reward at each timestep, with sign
-            signed_all = torch.where(as_player1, 
-                                    log['rewards'],        # when P1: +reward
-                                    -log['rewards'])       # otherwise: -reward
-
-            # but keep only timesteps where it actually played (P1 or P2)
-            mask = as_player1 | as_player2
-            rewards = signed_all[mask]
 
             # plot average rewards
             kernel = torch.ones(config['log_window']) / config['log_window']
-            rewards = torch.tensor(rewards, dtype=torch.float32)
+            rewards = torch.tensor(log['rewards'][player_id], dtype=torch.float32)
             average_score = torch.conv1d(
                 rewards.view(1,1,-1),
                 kernel.view(1,1,-1)

@@ -1,10 +1,14 @@
 import torch
+import copy 
 
 from util import welch_one_sided
+from util import get_seed, get_mlp, AdamW
 
 from collections.abc import (
     Callable,
 )
+
+import pdb
 
 def pbt_init(
     player_configs
@@ -20,6 +24,7 @@ def pbt_init(
 def pbt_step(
     config,
     players,
+    optimizers,
     player_configs,
     rewards,
 ):
@@ -43,12 +48,15 @@ def pbt_step(
     if mask.any() == True:
         print('we have an update!')
         for player_id in mask.nonzero(as_tuple=True)[0]:
-            players[player_id] = players[replacement_indices[player_id]]
+            players[player_id] = copy.deepcopy(players[replacement_indices[player_id]])
             for name, transform in config['hyperparameter_transforms'].items():
                 raw = player_configs[player_id][name + '_raw']
                 noise = config['hyperparameter_raw_perturb'][name].sample()
                 values_raw = raw + noise
                 values = transform(values_raw)
                 player_configs[player_id][name] = values
-    
-    return players, player_configs
+            optimizers[player_id] = AdamW(
+                players[player_id].parameters(),
+                player_configs[player_id],
+            )
+    return players, player_configs, optimizers
