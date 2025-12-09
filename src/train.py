@@ -173,9 +173,9 @@ if __name__ == '__main__':
             'replay_buffer_capacity': 1_000,
             'minibatch_size': 10,
             'warmup_steps': 100,
-            'train_steps': 100_000,
-            'log_window': 1_000,
-            'batch_size': 128,
+            'train_steps': 10_000,
+            'log_window': 100,
+            'batch_size': 32,
             'learning_rate': 0.02
         }
 

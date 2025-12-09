@@ -13,22 +13,14 @@ def analyze_strategy(player):
 
 def plot_training(config, players,log):
     fig, ax = plt.subplots(2,2)
-    cmap = plt.get_cmap('viridis')
+    cmap = plt.get_cmap('tab20') # viridis
     colors = [cmap(i) for i in range(len(players))]
 
     for player_id in range(len(players)):        
         # visualize
-        as_player1 = log['player1_ids'] == player_id
-        as_player2 = log['player2_ids'] == player_id
+        mask = log['player_ids'] == player_id
 
-        # model’s reward at each timestep, with sign
-        signed_all = torch.where(as_player1, 
-                                log['rewards'],        # when P1: +reward
-                                -log['rewards'])       # otherwise: -reward
-
-        # but keep only timesteps where it actually played (P1 or P2)
-        mask = as_player1 | as_player2
-        rewards = signed_all[mask]
+        rewards = log['rewards'][mask]
 
         # plot average rewards
         kernel = torch.ones(config['log_window']) / config['log_window']
