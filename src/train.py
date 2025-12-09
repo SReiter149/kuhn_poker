@@ -1,8 +1,10 @@
 import torch
-from torch.nn import Linear, Sequential, ReLU
-from torch.distributions import Categorical
+from torch.nn import Linear, Sequential, Sigmoid
+from torch.distributions import Categorical, Bernoulli
 from torch.optim import AdamW
 torch.autograd.set_detect_anomaly(True)
+
+import numpy as np
 
 from tqdm import tqdm
 import gymnasium as gym
@@ -10,7 +12,7 @@ import gymnasium as gym
 # from model import Player1, Player2
 from game import KuhnPoker
 from util import get_seed, get_mlp
-from analyze import analyze_strategy
+from analyze import analyze_strategy, plot_training
 
 from matplotlib import pyplot as plt
 
@@ -46,49 +48,52 @@ def play_game(player1,player2, game):
     ]
     turn = 0
     terminal = False
-    state,terminal = game.reset()
-    state = torch.asarray(state, device = config['device'], dtype = torch.float32)
+    states,terminal = game.reset()
+
+    states = [
+        torch.asarray(state, device = config['device'], dtype = torch.float32) 
+        for state in states
+    ]
 
     while not terminal:
         player = turn % 2
-        # pdb.set_trace()
-        if player == 0:
-            masked_state = torch.cat((state[:3], state[6:]), dim = 0)
-        else: # player == 1
-            masked_state = state[3:]
-
-
         # get active players probability distribution and action
-        action_probabilities = players[player](masked_state)
-        dist = Categorical(logits=action_probabilities)
+
+        probs = players[player](states[player])
+        # pdb.set_trace()
+
+        dist = Bernoulli(probs = probs)
         action = dist.sample()                         
-        log_prob = dist.log_prob(action).squeeze(0)
+        log_prob = dist.log_prob(action)
 
         # play the move
-        state, reward, terminal = game.step(action.numpy())
+        states, reward, terminal = game.step(np.int64(action))
 
         # convert to torch
-        state = torch.asarray(state, device = config['device'], dtype = torch.float32)
+        states = [
+            torch.asarray(state, device = config['device'], dtype = torch.float32) 
+            for state in states
+        ]
         reward = torch.asarray(reward, device = config['device'], dtype = torch.float32)
         terminal = torch.asarray(terminal, device = config['device'], dtype = torch.bool)
 
         # update last players buffer based on current players move
         if turn >= 1:
-            assert len(last_log_prob.shape) == 0 
+            assert last_log_prob.shape == torch.Size([1])
             memory[(player + 1) % 2]['log_probs'].append(last_log_prob)
-            memory[(player + 1) % 2]['observations'].append(last_state)
+            memory[(player + 1) % 2]['observations'].append(last_states[(player + 1) % 2])
             memory[(player + 1) % 2]['rewards'].append(reward[(player + 1) % 2])
             memory[(player + 1) % 2]['actions'].append(last_action)
 
         # set up for next turn
         last_log_prob = log_prob
-        last_state = state
+        last_states = states
         last_action = action
         turn += 1
 
     # save the last turn for the active player
     memory[player]['log_probs'].append(last_log_prob)
-    memory[player]['observations'].append(last_state)
+    memory[player]['observations'].append(last_states[player])
     memory[player]['rewards'].append(reward[player])
     memory[player]['actions'].append(last_action)
     
@@ -96,7 +101,7 @@ def play_game(player1,player2, game):
     for player in range(2):
         for key in memory[player].keys():
             memory[player][key] = torch.stack(memory[player][key])
-    return memory, last_state[:6]
+    return memory, game.get_deal()
 
 
 def train(config, players):
@@ -174,92 +179,24 @@ if __name__ == '__main__':
         kuhn = KuhnPoker()
 
         # make players
-        player1 = Sequential(
-            Linear(9, 12),
-            ReLU(),
-            Linear(12, 10),
-            ReLU(),
-            Linear(10, 6),
-            ReLU(),
-            Linear(6,2)
-        )
-        player2 = Sequential(
-            Linear(9, 12),
-            ReLU(),
-            Linear(12, 10),
-            ReLU(),
-            Linear(10, 6),
-            ReLU(),
-            Linear(6,2)
-        )
-        player3 = Sequential(
-            Linear(9, 12),
-            ReLU(),
-            Linear(12, 10),
-            ReLU(),
-            Linear(10, 6),
-            ReLU(),
-            Linear(6,2)
-        )
-        player4 = Sequential(
-            Linear(9, 12),
-            ReLU(),
-            Linear(12, 10),
-            ReLU(),
-            Linear(10, 6),
-            ReLU(),
-            Linear(6,2)
-        )
-
+        num_players = 4
         players = [
-            player1,
-            player2,
-            player3,
-            player4
+            Sequential(
+                Linear(12, 1),
+                Sigmoid()
+            ) for i in range(num_players)
         ]
 
         # train
         log = train(config, players)
-        # pdb.set_trace()
 
-        fig, ax = plt.subplots(2,2)
-        colors = ['red','orange','yellow', 'green', 'blue', 'purple']
+        # analyze
+        for player in players:
+            print("---------")
+            analyze_strategy(player)
 
-        for player_id in range(len(players)):
-            # print analysis
-            print(f'analysis for player {player_id}')
-            analyze_strategy(players[player_id])
-            
-            # visualize
-            
-
-            as_player1 = log['player1_ids'] == player_id
-            as_player2 = log['player2_ids'] == player_id
-
-            # model’s reward at each timestep, with sign
-            signed_all = torch.where(as_player1, 
-                                    log['rewards'],        # when P1: +reward
-                                    -log['rewards'])       # otherwise: -reward
-
-            # but keep only timesteps where it actually played (P1 or P2)
-            mask = as_player1 | as_player2
-            rewards = signed_all[mask]
-
-            # plot average rewards
-            kernel = torch.ones(config['log_window']) / config['log_window']
-            rewards = torch.tensor(rewards, dtype=torch.float32)
-            average_score = torch.conv1d(
-                rewards.view(1,1,-1),
-                kernel.view(1,1,-1)
-            ).view(-1)
-            ax[0,0].plot(average_score, label = f'{player_id} rewards', c = colors[player_id])
-            # ax[0,0].axhline(y=float(1/18), color='r', linestyle='--', label='Nash (P1 = 1/18)')
-            
-            # ax[0,0].set_yscale('log')
-
-            ax[0,1].plot(torch.cumsum(rewards, dim = 0), label = f'{player_id} score',c = colors[player_id])
-        fig.legend()
-        plt.show()
+        # plot
+        plot_training(config, players, log)
 
         pdb.set_trace()
     except:

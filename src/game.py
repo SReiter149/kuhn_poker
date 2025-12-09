@@ -15,19 +15,42 @@ class KuhnPoker():
         self.cards[0][card1] = 1
         self.cards[1][card2] = 1
 
+    def get_deal(self):
+        return (self.cards[:3], self.cards[3:])
+
     def get_state(self):
+        state1 = np.array([0] * 12)
+        state2 = np.array([0] * 12)
         cards = self.cards.flatten() # (6,)
-        history = self.history.flatten() # (6,)
 
-        state = np.concatenate([cards, history]) # (12,)
+        if (self.history == np.array([[0,0],[0,0],[0,0]],dtype = np.float32)).all():
+            # no history
+            state1[0:3] = cards[:3]
+            state2[0:3] = cards[3:]
+        elif (self.history == np.array([[1,0],[0,0],[0,0]],dtype = np.float32)).all():
+            # p1: pass
+            state1[3:6] = cards[:3]
+            state2[3:6] = cards[3:]
+        elif (self.history == np.array([[1,0],[0,1],[0,0]],dtype = np.float32)).all():
+            # p1: pass
+            # p2: bet
+            state1[6:9] = cards[:3]
+            state2[6:9] = cards[3:]
+        elif (self.history == np.array([[0,1],[0,0],[0,0]],dtype = np.float32)).all():
+            # p1: bet
+            state1[9:12] = cards[:3]
+            state2[9:12] = cards[3:]
+        else:
+            state1 = np.array([-1] * 12)
+            state2 = np.array([-1] * 12)            
 
-        return state
+        return state1, state2
 
 
     def reset(self):
         """
         returns: 
-        - state
+        - (state1, state2)
         - turn
         """
         self.turn = 0
@@ -35,10 +58,10 @@ class KuhnPoker():
         self.cards = np.array([[0,0,0], [0,0,0]]) # one-hot encoding of cards
         
         self.deal()
-        state = self.get_state()
+        state1, state2 = self.get_state()
         self.terminal = False
 
-        return state, self.terminal
+        return (state1, state2), self.terminal
     
     def check_history(self):
         """
@@ -81,7 +104,7 @@ class KuhnPoker():
 
         self.history[self.turn][action] = 1
         terminal, winner, pot = self.check_history()
-        state = self.get_state()
+        state1, state2 = self.get_state()
 
         if terminal:
             if winner == 0:
@@ -90,22 +113,22 @@ class KuhnPoker():
                 reward = np.array([pot, -pot], dtype = np.float32)
             elif winner == 2:
                 reward = np.array([-pot, pot], dtype = np.float32)
-            return state, reward, terminal
+            return (state1, state2), reward, terminal
 
         self.turn += 1
         reward = np.array([0,0], dtype = np.float32)
-        return state, reward, terminal
+        return (state1, state2), reward, terminal
 
 if __name__ == "__main__":
     try:   
         kuhn = KuhnPoker()
-        state, terminal = kuhn.reset()
-        state, reward, terminal = kuhn.step(1)
-        state, reward, terminal = kuhn.step(1)
-        # state, reward, terminal = kuhn.step(0)
+        (state1, state2), terminal = kuhn.reset()
+        (state1, state2), reward, terminal = kuhn.step(np.int64(0))
+        (state1, state2), reward, terminal = kuhn.step(np.int64(0))
+        # (state1, state2), reward, terminal = kuhn.step(np.int64(1))
         
 
-        print(state)
+        print((state1, state2))
         print(reward)
         print(terminal)
 
