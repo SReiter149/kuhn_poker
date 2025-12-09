@@ -19,7 +19,7 @@ from matplotlib import pyplot as plt
 import pdb
 from rich.console import Console
 
-def play_game(player1,player2, game):
+def play_game(player1, game, player2 = None):
     '''
     play a single game given the players
 
@@ -37,14 +37,18 @@ def play_game(player1,player2, game):
     '''
 
     # set up  
-    players = [player1, player2]  
+    if player2 == None:
+        players = [player1]
+    else:
+        players = [player1, player2]  
+    num_players = len(players)
     memory = [
         {
             "rewards": [],
             'actions': [],
             "observations": [],
             "log_probs": [],
-        } for i in range(2)
+        } for i in range(len(players))
     ]
     turn = 0
     terminal = False
@@ -56,7 +60,7 @@ def play_game(player1,player2, game):
     ]
 
     while not terminal:
-        player = turn % 2
+        player = turn % num_players
         # get active players probability distribution and action
 
         probs = players[player](states[player])
@@ -80,10 +84,10 @@ def play_game(player1,player2, game):
         # update last players buffer based on current players move
         if turn >= 1:
             assert last_log_prob.shape == torch.Size([1])
-            memory[(player + 1) % 2]['log_probs'].append(last_log_prob)
-            memory[(player + 1) % 2]['observations'].append(last_states[(player + 1) % 2])
-            memory[(player + 1) % 2]['rewards'].append(reward[(player + 1) % 2])
-            memory[(player + 1) % 2]['actions'].append(last_action)
+            memory[(player + 1) % num_players]['log_probs'].append(last_log_prob)
+            memory[(player + 1) % num_players]['observations'].append(last_states[(player + 1) % num_players])
+            memory[(player + 1) % num_players]['rewards'].append(reward[(player + 1) % num_players])
+            memory[(player + 1) % num_players]['actions'].append(last_action)
 
         # set up for next turn
         last_log_prob = log_prob
@@ -98,9 +102,12 @@ def play_game(player1,player2, game):
     memory[player]['actions'].append(last_action)
     
     # stack all lists
-    for player in range(2):
+    for player in range(num_players):
         for key in memory[player].keys():
             memory[player][key] = torch.stack(memory[player][key])
+    
+    if len(memory) == 1:
+        return memory[0], game.get_deal()
     return memory, game.get_deal()
 
 
@@ -120,46 +127,42 @@ def train(config, players):
     log = {
         'rewards': [],
         'deal': [],
-        'player1_ids': [],
-        'player2_ids': [],
+        'player_ids': [],
         'actions': [],
     }
     progress_bar = tqdm(range(config['train_steps']))
-    loss = [torch.tensor(0.0, device=config['device']) for _ in players]
-
-    player1_id, player2_id = torch.randperm(len(players))[:2]
+    loss = torch.tensor(0.0, device=config['device'])
+    player_id = 0
 
     for game_id in progress_bar:
-        # play a game
-        memory, deal = play_game(players[player1_id], players[player2_id], kuhn)
-        log['deal'].append(deal)
-        log['actions'].append((memory[0]['actions'],memory[1]['actions']))
-        log['rewards'].append(memory[0]['rewards'][-1])
-        log['player1_ids'].append(player1_id)
-        log['player2_ids'].append(player2_id)
+            # play a game
+            memory, deal = play_game(players[player_id], kuhn)
+            log['deal'].append(deal)
+            log['actions'].append((memory['actions']))
+            log['rewards'].append(memory['rewards'][-1])
+            log['player_ids'].append(player_id)
             
-        # back propogation
-        for player_num, player_id in enumerate([player1_id, player2_id]):
-            # get undiscounted rewards (undiscounted since number of moves shouldn't matter)
-            if len(memory[player_num]['rewards']) > 1:
-                rewards = torch.tensor([sum(memory[player_num]['rewards'][move:]) for move in range(len(memory[player_num]['rewards']))], device= config['device'], dtype = torch.float32)
+            if len(memory['rewards']) > 1:
+                rewards = torch.tensor([sum(memory['rewards'][move:]) for move in range(len(memory['rewards']))], device= config['device'], dtype = torch.float32)
             else:
-                rewards = torch.tensor(memory[player_num]['rewards'][0], device=config['device'], dtype=torch.float32)
+                rewards = torch.tensor(memory['rewards'][0], device=config['device'], dtype=torch.float32)
                 
             # loss and backprop
             # CHECK MAKE SURE THIS LOSS FUNCTION IS OPTIMAL
-            game_loss = -1 * ((memory[player_num]['log_probs'] * rewards).sum())
-            loss[player_num] = loss[player_num] + game_loss
+            game_loss = -1 * ((memory['log_probs'] * rewards).sum())
+            loss = loss + game_loss
 
             if (game_id + 1) % config['batch_size'] == 0:
-                loss[player_num].backward()
+                loss.backward()
                 optimizers[player_id].step()
 
                 optimizers[player_id].zero_grad()
-                loss = [torch.tensor(0.0, device=config['device']) for _ in range(2)]
+                loss = torch.tensor(0.0, device=config['device'])
 
-                player1_id, player2_id = torch.randperm(len(players))[:2]
-    for key in ('player1_ids', 'player2_ids', "rewards"):
+                player_id += 1
+                player_id %= num_players
+
+    for key in ('player_ids', "rewards"):
         log[key] = torch.tensor(log[key])
     return log
 
