@@ -12,7 +12,7 @@ import gymnasium as gym
 # from model import Player1, Player2
 from game import KuhnPoker
 from util import get_seed, get_mlp
-from analyze import analyze_strategy, plot_training
+from models import OptimalBotP2
 
 from matplotlib import pyplot as plt
 
@@ -166,8 +166,135 @@ def train(config, players):
         log[key] = torch.tensor(log[key])
     return log
 
+
+def train_vs_optimal_bot(config, player, game):
+    """
+    Train a single player against the optimal Nash equilibrium bot.
+    This allows P1 to converge to Nash equilibrium value of -1/18.
+    
+    Args:
+        config: Training configuration dict with keys:
+            - device: 'cpu' or 'cuda'
+            - learning_rate: float
+            - train_steps: int
+        player: P1 neural network model
+        game: KuhnPoker environment
+        
+    Returns:
+        log: Dictionary with 'rewards', 'player_ids', 'actions', 'deal' as tensors
+    """
+    from torch.distributions import Bernoulli
+    from tqdm import tqdm
+    
+    optimizer = AdamW(player.parameters(), lr=config['learning_rate'])
+    optimal_bot = OptimalBotP2(device=config['device'])
+    
+    log = {
+        'rewards': [],
+        'deal': [],
+        'player_ids': [],
+        'actions': [],
+    }
+    
+    progress_bar = tqdm(range(config['train_steps']))
+    
+    for game_id in progress_bar:
+        # reset game
+        states, terminal = game.reset()
+        states = [torch.tensor(s, dtype=torch.float32, device=config['device']) for s in states]
+        
+        # store P1 info
+        p1_log_probs = []
+        p1_rewards = []
+        turn = 0
+        
+        while not terminal:
+            current_player = turn % 2
+            
+            if current_player == 0:
+                # p1 turn
+                probs = player(states[0])
+                dist = Bernoulli(probs=probs)
+                action = dist.sample()
+                log_prob = dist.log_prob(action)
+                p1_log_probs.append(log_prob)
+            else:
+                # p2 turn
+                probs = optimal_bot(states[1])
+                dist = Bernoulli(probs=probs)
+                action = dist.sample()
+            
+            # execute action
+            states, rewards, terminal = game.step(np.int64(action.item()))
+            states = [torch.tensor(s, dtype=torch.float32, device=config['device']) for s in states]
+            
+            # store P1's reward after each move
+            if isinstance(rewards, (list, tuple)):
+                p1_reward = rewards[0]
+            else:
+                p1_reward = rewards
+            p1_rewards.append(p1_reward)
+            
+            turn += 1
+        
+        # final reward for P1
+        if p1_rewards:
+            if isinstance(p1_rewards[-1], (list, tuple)):
+                final_reward = float(p1_rewards[-1][0])
+            elif isinstance(p1_rewards[-1], np.ndarray):
+                final_reward = float(p1_rewards[-1].item() if p1_rewards[-1].size == 1 else p1_rewards[-1][0])
+            else:
+                final_reward = float(p1_rewards[-1])
+        else:
+            final_reward = 0.0
+        
+        # log the episode
+        log['rewards'].append(torch.tensor(final_reward, dtype=torch.float32, device=config['device']))
+        log['player_ids'].append(0)  # always player 0
+        log['deal'].append(game.get_deal())
+        log['actions'].append(torch.tensor(0, dtype=torch.int64))  # placeholder
+        
+        # compute loss for P1 (REINFORCE)
+        if len(p1_log_probs) > 0:
+            if isinstance(final_reward, (list, tuple)):
+                reward_value = float(final_reward[0])
+            elif isinstance(final_reward, np.ndarray):
+                reward_value = float(final_reward.item() if final_reward.size == 1 else final_reward[0])
+            else:
+                reward_value = float(final_reward)
+            
+            # stack log probs
+            log_probs_tensor = torch.cat([lp.view(-1) for lp in p1_log_probs])
+            loss = -(log_probs_tensor.sum() * reward_value)
+            
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+        
+        # progress bar update
+        if (game_id + 1) % 1000 == 0:
+            recent_rewards = [log['rewards'][i].item() for i in range(max(0, len(log['rewards'])-1000), len(log['rewards']))]
+            avg_reward = np.mean(recent_rewards) if recent_rewards else 0.0
+            progress_bar.set_postfix({'avg_reward': f'{avg_reward:.4f}'})
+    
+    log['rewards'] = torch.stack(log['rewards'])
+    log['player_ids'] = torch.tensor(log['player_ids'], device=config['device'])
+    log['actions'] = torch.stack(log['actions'])
+    # deal is complex, convert via numpy array
+    try:
+        deal_array = np.array([np.array(d) for d in log['deal']])
+        log['deal'] = torch.from_numpy(deal_array).to(config['device'])
+    except:
+        # if conversion fails, just keep as list
+        pass
+    
+    return log
+
+
 if __name__ == '__main__':
     try:
+        from models import create_kuhn_player
+        
         config = {
             'device': 'cpu',
             'replay_buffer_capacity': 1_000,
@@ -183,23 +310,13 @@ if __name__ == '__main__':
 
         # make players
         num_players = 4
-        players = [
-            Sequential(
-                Linear(12, 1),
-                Sigmoid()
-            ) for i in range(num_players)
-        ]
+        players = [create_kuhn_player(config['device']) for i in range(num_players)]
 
         # train
         log = train(config, players)
 
-        # analyze
-        for player in players:
-            print("---------")
-            analyze_strategy(player)
-
-        # plot
-        plot_training(config, players, log)
+        print("\nTraining complete!")
+        print(f"Final rewards shape: {log['rewards'].shape}")
 
         pdb.set_trace()
     except:

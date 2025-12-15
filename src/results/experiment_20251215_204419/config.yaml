@@ -1,0 +1,6 @@
+batch_size: 16
+device: cpu
+learning_rate: 0.002
+log_window: 10000
+num_players: 1
+train_steps: 10000

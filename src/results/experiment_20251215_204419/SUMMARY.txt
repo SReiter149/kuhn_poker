@@ -1,0 +1,33 @@
+KUHN POKER RL EXPERIMENT SUMMARY
+======================================================================
+
+Timestamp: 2025-12-15T20:44:19.739863
+Output Directory: ./results/experiment_20251215_204419
+
+Training Episodes: 10,000
+Number of Players: 1
+
+Player 0:
+  Final Avg Reward: 0.0600
+  Games Played: 10000
+  Strategy Metrics:
+    jack_bet: 0.1562
+    queen_bet: 0.2742
+    king_bet: 0.7422
+    jack_call: 0.1232
+    queen_call: 0.3481
+    king_call: 0.8010
+    alpha: 0.1562
+
+
+======================================================================
+
+Files Generated:
+  - player_0_model.pt
+  - rewards_log.npz
+  - config.yaml
+  - metrics.json
+  - plots/01_training_convergence.png
+  - plots/02_strategy_heatmap.png
+  - plots/03_nash_comparison.png
+  - plots/04_comprehensive_analysis.png

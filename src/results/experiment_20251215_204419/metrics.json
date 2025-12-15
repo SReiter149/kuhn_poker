@@ -1,0 +1,26 @@
+{
+  "total_episodes": 10000,
+  "num_players": 1,
+  "config": {
+    "device": "cpu",
+    "train_steps": 10000,
+    "batch_size": 16,
+    "learning_rate": 0.002,
+    "log_window": 10000,
+    "num_players": 1
+  },
+  "timestamp": "2025-12-15T20:44:19.739863",
+  "player_0": {
+    "final_avg_reward": 0.05999999865889549,
+    "num_games": 10000,
+    "strategy": {
+      "jack_bet": 0.15621374547481537,
+      "queen_bet": 0.2741892635822296,
+      "king_bet": 0.742167592048645,
+      "jack_call": 0.12323548644781113,
+      "queen_call": 0.34811368584632874,
+      "king_call": 0.800971508026123,
+      "alpha": 0.15621374547481537
+    }
+  }
+}
