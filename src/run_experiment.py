@@ -7,10 +7,15 @@ import numpy as np
 import torch
 from datetime import datetime
 import argparse
+import pdb
+
+from matplotlib import pyplot as plt
+
 from train import train, train_vs_optimal_bot
 from game import KuhnPoker
 from models import create_kuhn_player
-from analyze import analyze_strategy
+from analyze import analyze_strategy, distance_from_optimal
+
 
 from plot_research import (
     plot_training_convergence,
@@ -76,13 +81,7 @@ def print_summary(metrics):
 
 def analyze_single_player_strategy(player, device='cpu'):
     player.eval()
-    
-    
-    
-    
-    
-    
-    
+   
     def get_bet_prob(state_idx):
         state = torch.zeros(12, dtype=torch.float32, device=device)
         state[state_idx] = 1
@@ -107,6 +106,28 @@ def analyze_single_player_strategy(player, device='cpu'):
     metrics['alpha'] = metrics['jack_bet']
     
     return metrics
+
+def run_experiment2(config_path = "config2.yaml"):
+    with open(config_path, "r") as f:
+        config = yaml.safe_load(f)
+
+    train_config = config['training']
+    game = KuhnPoker()
+
+    num_players_count = train_config['num_players']
+    players = [create_kuhn_player(train_config['device']) for i in range(num_players_count)]
+    logs = []
+
+    for player_id in range(num_players_count):
+        player, train_log = train_vs_optimal_bot(train_config, players[player_id], game)
+        logs.append(train_log)
+        players[player_id] = player
+        print(distance_from_optimal(player))
+
+    plt.show()
+    for player_id in range(num_players_count):
+        plt.plot(logs[player_id]['distances'])
+    plt.show()
 
 def run_experiment(config_path="config.yaml", output_dir=None, quick_mode=False, num_players=None):
         
@@ -392,4 +413,10 @@ def main():
         return 1
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        run_experiment2()
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        pdb.post_mortem()
+    # sys.exit(main())

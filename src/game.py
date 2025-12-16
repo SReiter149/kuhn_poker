@@ -16,7 +16,7 @@ class KuhnPoker():
         self.cards[1][card2] = 1
 
     def get_deal(self):
-        return (self.cards[:3], self.cards[3:])
+        return self.cards
 
     def get_state(self):
         state1 = np.array([0] * 12)

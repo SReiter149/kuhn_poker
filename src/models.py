@@ -9,7 +9,7 @@ def create_kuhn_player(device='cpu'):
     - Output: 1-dimensional probability (bet/call action)
     """
     return Sequential(
-        Linear(12, 1),
+        Linear(12, 1, bias = False),
         Sigmoid()
     ).to(device)
 
@@ -18,7 +18,7 @@ class OptimalBotP2:
     """
     Hardcoded Nash equilibrium strategy for Player 2
     """
-    def __init__(self, device='cpu', alpha=1/3):
+    def __init__(self, device='cpu', alpha=0):
         self.device = device
         self.alpha = alpha  # P1's bluffing frequency (0 to 1/3)
     
@@ -39,7 +39,7 @@ class OptimalBotP2:
             elif card == 2:  # King: Always bet
                 bet_prob = 1.0
             else:
-                bet_prob = 0.5
+                raise ValueError
         elif 9 <= state_idx <= 11:
             # After P1 bet: P2 decides to call or fold
             card = state_idx - 9  # 0=Jack, 1=Queen, 2=King
@@ -50,9 +50,9 @@ class OptimalBotP2:
             elif card == 2:  # King: Always call
                 bet_prob = 1.0
             else:
-                bet_prob = 0.5
+                raise ValueError
         else:
             # Other states .. shouldnt happen for P2's decisions
-            bet_prob = 0.5
+            raise ValueError
         
         return torch.tensor([bet_prob], dtype=torch.float32, device=self.device)

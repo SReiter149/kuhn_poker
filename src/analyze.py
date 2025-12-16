@@ -10,6 +10,17 @@ def analyze_strategy(player):
         prob = player(state)
         print(f'given state {state.detach().cpu().numpy()} prob of call/bet is {prob.detach().item()}')
 
+def distance_from_optimal(player):
+    probs = torch.sigmoid(player[0].weight.squeeze(0))
+    gamma = probs[2]
+
+    perfect = torch.tensor([gamma/3, 0, gamma, 1/3, 0, 1, 0, (gamma + 1)/3, 1, 0, 1/3, 1])
+
+    as_player1 = torch.sum((probs[0:3] - perfect[0:3])**2 + (probs[6:9] - perfect[6:9])**2).item()
+    as_player2 = torch.sum((probs[3:6] - perfect[9:12])**2 + (probs[6:9] - perfect[6:9])**2).item()
+
+    return as_player1, as_player2
+
 
 def plot_training(config, players,log):
     fig, ax = plt.subplots(2,2)
