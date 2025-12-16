@@ -114,19 +114,24 @@ def run_experiment2(config_path = "config2.yaml"):
     train_config = config['training']
     game = KuhnPoker()
 
-    num_players_count = train_config['num_players']
-    players = [create_kuhn_player(train_config['device']) for i in range(num_players_count)]
+    num_players = train_config['num_players']
+    players = [create_kuhn_player(train_config['device']) for i in range(num_players)]
     logs = []
 
-    for player_id in range(num_players_count):
+    for player_id in range(num_players):
         player, train_log = train_vs_optimal_bot(train_config, players[player_id], game)
         logs.append(train_log)
         players[player_id] = player
         print(distance_from_optimal(player))
 
-    plt.show()
-    for player_id in range(num_players_count):
-        plt.plot(logs[player_id]['distances'])
+    final_distances = np.array([logs[player_id]['distances'][-1] for player_id in range(num_players)])
+
+    for p in np.linspace(0, 1, 11):
+        val = np.quantile(final_distances, p)
+        idx = np.argmin(np.abs(final_distances - val))
+        plt.plot(logs[idx]['distances'], label = f"{p:.2f}")
+        # pdb.set_trace()
+    plt.legend(title = "percentile")
     plt.show()
 
 def run_experiment(config_path="config.yaml", output_dir=None, quick_mode=False, num_players=None):
@@ -177,14 +182,14 @@ def run_experiment(config_path="config.yaml", output_dir=None, quick_mode=False,
     game = KuhnPoker()
     
     
-    num_players_count = train_config['num_players']
-    players = [create_kuhn_player(train_config['device']) for i in range(num_players_count)]
-    print(f"  ✓ Created {num_players_count} players")
+    num_players = train_config['num_players']
+    players = [create_kuhn_player(train_config['device']) for i in range(num_players)]
+    print(f"  ✓ Created {num_players} players")
     
     
     print("\n[3/7] Training models...")
     
-    if num_players_count == 1:
+    if num_players == 1:
         
         print("  Mode: Training P1 vs Optimal Nash Equilibrium Bot (P2)")
         log = train_vs_optimal_bot(train_config, players[0], game)
@@ -197,7 +202,7 @@ def run_experiment(config_path="config.yaml", output_dir=None, quick_mode=False,
         import train as train_module
         train_module.kuhn = game
         train_module.config = train_config
-        train_module.num_players = num_players_count
+        train_module.num_players = num_players
         
         log = train(train_config, players)
     
@@ -208,7 +213,7 @@ def run_experiment(config_path="config.yaml", output_dir=None, quick_mode=False,
     
     
     player_metrics = {}
-    for player_id in range(num_players_count):
+    for player_id in range(num_players):
         mask = (log['player_ids'] == player_id).cpu().numpy()
         player_rewards = log['rewards'][mask].cpu().numpy()
         
@@ -231,7 +236,7 @@ def run_experiment(config_path="config.yaml", output_dir=None, quick_mode=False,
     
     metrics = {
         'total_episodes': int(train_config['train_steps']),
-        'num_players': num_players_count,
+        'num_players': num_players,
         'config': train_config,
         'timestamp': datetime.now().isoformat()
     }
@@ -256,7 +261,7 @@ def run_experiment(config_path="config.yaml", output_dir=None, quick_mode=False,
     plots_dir = os.path.join(output_dir, "plots")
     os.makedirs(plots_dir, exist_ok=True)
     
-    if num_players_count == 1:
+    if num_players == 1:
         
         player_id = 0
         mask = (log['player_ids'] == player_id).cpu().numpy()
@@ -322,7 +327,7 @@ def run_experiment(config_path="config.yaml", output_dir=None, quick_mode=False,
         f.write(f"Training Episodes: {metrics['total_episodes']:,}\n")
         f.write(f"Number of Players: {metrics['num_players']}\n\n")
         
-        for player_id in range(num_players_count):
+        for player_id in range(num_players):
             player_key = f'player_{player_id}'
             if player_key in metrics:
                 pm = metrics[player_key]
@@ -337,19 +342,19 @@ def run_experiment(config_path="config.yaml", output_dir=None, quick_mode=False,
         
         f.write("\n" + "="*70 + "\n")
         f.write("\nFiles Generated:\n")
-        for i in range(num_players_count):
+        for i in range(num_players):
             f.write(f"  - player_{i}_model.pt\n")
         f.write("  - rewards_log.npz\n")
         f.write("  - config.yaml\n")
         f.write("  - metrics.json\n")
-        if num_players_count == 1:
+        if num_players == 1:
             f.write("  - plots/01_training_convergence.png\n")
             f.write("  - plots/02_strategy_heatmap.png\n")
             f.write("  - plots/03_nash_comparison.png\n")
             f.write("  - plots/04_comprehensive_analysis.png\n")
         else:
             f.write("  - plots/01_players_comparison.png\n")
-            for i in range(num_players_count):
+            for i in range(num_players):
                 f.write(f"  - plots/player_{i}_strategy.png\n")
     
     print(f"  ✓ Saved summary: {summary_path}")
