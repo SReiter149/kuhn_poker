@@ -136,8 +136,6 @@ def run_experiment3(config_path = "config3.yaml"):
     final_distances = np.array([logs[player_id]['distances'][-1] for player_id in range(num_players)])
     best_model_id = np.argmin(final_distances)
 
-    
-
     # plot learning of all
     plot_multiple_dstance_learning(logs, output_dir / "overview.png")
     plot_strategy_heatmap(players[best_model_id], save_path= output_dir / "p1_strategy_heatmap.png")

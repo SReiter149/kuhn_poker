@@ -1,0 +1,11 @@
+# Experiment outputs
+results/*
+!results/.gitkeep
+
+# Common artifacts inside results (optional, extra safety)
+*.csv
+*.json
+*.npz
+*.pt
+*.pth
+*.log

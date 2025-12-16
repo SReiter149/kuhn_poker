@@ -37,7 +37,6 @@ def exponential_moving_average(data: np.ndarray, window: int) -> np.ndarray:
     
     return ema
 
-
 def plot_training_convergence(
     rewards: List[float],
     window: int = 1000,
