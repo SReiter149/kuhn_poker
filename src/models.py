@@ -23,6 +23,9 @@ class OptimalBotP2:
         self.alpha = alpha  # P1's bluffing frequency (0 to 1/3)
     
     def __call__(self, state_tensor):
+        return self.forward(state_tensor)
+
+    def forward(self, state_tensor):
         state = state_tensor.cpu().numpy() if isinstance(state_tensor, torch.Tensor) else state_tensor
         
         # Find which state is active (one-hot encoded)

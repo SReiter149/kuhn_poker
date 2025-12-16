@@ -11,6 +11,20 @@ plt.style.use('seaborn-v0_8-paper')
 sns.set_palette("husl")
 ALPHA_CHAR = '\u03B1'
 
+def plot_multiple_dstance_learning(logs, save_path):
+    final_distances = np.array([logs[player_id]['distances'][-1] for player_id in range(len(logs))])
+
+    # plot learning of all
+    for p in np.linspace(0, 1, 11):
+        val = np.quantile(final_distances, p)
+        idx = np.argmin(np.abs(final_distances - val))
+        plt.plot(logs[idx]['distances'], label = f"{p:.2f}")
+        # pdb.set_trace()
+    plt.legend(title = "percentile")
+    plt.title("training steps VS distance")
+    plt.xlabel("number of time back prop happened")
+    plt.ylabel("the distance from the optimal solution")
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
 
 def exponential_moving_average(data: np.ndarray, window: int) -> np.ndarray:
     data = np.asarray(data, dtype=float)
@@ -66,14 +80,72 @@ def plot_training_convergence(
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     
+    # ax.set_yscale("symlog", linthresh=1e-3)
     plt.tight_layout()
     
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"Saved: {save_path}")
-    
-    plt.show()
+    else:
+        plt.show()
 
+
+def plot_strategy_heatmap_p2(
+    player_model,
+    device: str = 'cpu',
+    save_path = None
+):
+
+    def get_action_probs(card_idx: int, offset: int):
+        state = np.zeros(12, dtype=np.float32)
+        state[offset + card_idx] = 1
+        state_t = torch.FloatTensor(state).unsqueeze(0).to(device)
+        prob_one = player_model(state_t)
+        prob_zero = 1.0 - prob_one
+        return np.array([prob_zero, prob_one])
+
+    cards = ['Jack', 'Queen', 'King']
+    panels = [
+        ('Response to P1 Bet', 3),
+        ('After P1 Pass (P2 decision)', 9),
+    ]
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+    for idx, (title, offset) in enumerate(panels):
+        ax = axes[idx]
+        probs_matrix = np.zeros((3, 2))
+        # pdb.set_trace()
+        for card_idx, _ in enumerate(cards):
+            probs_matrix[card_idx] = get_action_probs(card_idx, offset).squeeze(1)
+
+        im = ax.imshow(probs_matrix, cmap='RdYlGn', aspect='auto',
+                       vmin=0, vmax=1, interpolation='nearest')
+
+        ax.set_xticks([0, 1])
+        ax.set_xticklabels(['Fold/Pass', 'Call/Bet'], fontsize=11)
+        ax.set_yticks([0, 1, 2])
+        ax.set_yticklabels(cards, fontsize=11)
+        ax.set_title(title, fontsize=13, fontweight='bold', pad=10)
+
+        for i in range(3):
+            for j in range(2):
+                ax.text(j, i, f'{probs_matrix[i, j]:.3f}',
+                        ha='center', va='center',
+                        color='black' if probs_matrix[i, j] > 0.5 else 'white',
+                        fontsize=12, fontweight='bold')
+
+        cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        cbar.set_label('Probability', fontsize=11, fontweight='bold')
+
+    plt.suptitle('P2 Strategy Heatmap', fontsize=15, fontweight='bold', y=1.02)
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Saved: {save_path}")
+    else:
+        plt.show()
 
 def plot_strategy_heatmap(
     player_model,
@@ -138,8 +210,8 @@ def plot_strategy_heatmap(
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"Saved: {save_path}")
-    
-    plt.show()
+    else:
+        plt.show()
 
 
 def plot_exploitability_evolution(
@@ -178,8 +250,8 @@ def plot_exploitability_evolution(
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"Saved: {save_path}")
-    
-    plt.show()
+    else:
+        plt.show()
 
 
 def plot_players_comparison(
@@ -287,8 +359,8 @@ def plot_players_comparison(
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"Saved: {save_path}")
-    
-    plt.show()
+    else:
+        plt.show()
 
 
 def plot_strategy_comparison_nash(
@@ -374,5 +446,5 @@ def plot_strategy_comparison_nash(
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"Saved: {save_path}")
-    
-    plt.show()
+    else:
+        plt.show()

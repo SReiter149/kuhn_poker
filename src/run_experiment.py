@@ -8,10 +8,11 @@ import torch
 from datetime import datetime
 import argparse
 import pdb
+from pathlib import Path
 
 from matplotlib import pyplot as plt
 
-from train import train, train_vs_optimal_bot
+from train import train, train_vs_optimal_bot, train_self_play
 from game import KuhnPoker
 from models import create_kuhn_player
 from analyze import analyze_strategy, distance_from_optimal
@@ -20,15 +21,17 @@ from analyze import analyze_strategy, distance_from_optimal
 from plot_research import (
     plot_training_convergence,
     plot_strategy_heatmap,
+    plot_strategy_heatmap_p2,
     plot_strategy_comparison_nash,
-    plot_players_comparison
+    plot_players_comparison,
+    plot_multiple_dstance_learning
 )
 
-def create_output_directory(base_dir="./results"):
+def create_output_directory(experiment_number = 1, base_dir="./results"):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = os.path.join(base_dir, f"experiment_{timestamp}")
+    output_dir = os.path.join(base_dir, f"experiment{experiment_number}_{timestamp}")
     os.makedirs(output_dir, exist_ok=True)
-    return output_dir
+    return Path(output_dir)
 
 def save_results(output_dir, players, log, config, metrics):
         
@@ -107,9 +110,11 @@ def analyze_single_player_strategy(player, device='cpu'):
     
     return metrics
 
-def run_experiment2(config_path = "config2.yaml"):
+def run_experiment3(config_path = "config3.yaml"):
+    # set up train
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
+    torch.manual_seed(config['seed'])
 
     train_config = config['training']
     game = KuhnPoker()
@@ -118,21 +123,61 @@ def run_experiment2(config_path = "config2.yaml"):
     players = [create_kuhn_player(train_config['device']) for i in range(num_players)]
     logs = []
 
+        # train
+    for player_id in range(num_players):
+        player, train_log = train_self_play(train_config, players[player_id], game)
+        logs.append(train_log)
+        players[player_id] = player
+        print(distance_from_optimal(player))
+
+    # analysis
+    output_dir = create_output_directory(3)
+
+    final_distances = np.array([logs[player_id]['distances'][-1] for player_id in range(num_players)])
+    best_model_id = np.argmin(final_distances)
+
+    
+
+    # plot learning of all
+    plot_multiple_dstance_learning(logs, output_dir / "overview.png")
+    plot_strategy_heatmap(players[best_model_id], save_path= output_dir / "p1_strategy_heatmap.png")
+    plot_strategy_heatmap_p2(players[best_model_id], save_path= output_dir / "p2_strategy_heatmap.png")
+    plot_training_convergence((-1)*logs[best_model_id]['reward'], save_path= output_dir / "training_convergence.png")
+
+    pdb.set_trace()
+
+def run_experiment2(config_path = "config2.yaml"):   
+    # set up train
+    with open(config_path, "r") as f:
+        config = yaml.safe_load(f)
+    torch.manual_seed(config['seed'])
+
+    train_config = config['training']
+    game = KuhnPoker()
+
+    num_players = train_config['num_players']
+    players = [create_kuhn_player(train_config['device']) for i in range(num_players)]
+    logs = []
+
+    # train
     for player_id in range(num_players):
         player, train_log = train_vs_optimal_bot(train_config, players[player_id], game)
         logs.append(train_log)
         players[player_id] = player
         print(distance_from_optimal(player))
 
-    final_distances = np.array([logs[player_id]['distances'][-1] for player_id in range(num_players)])
+    # analysis
+    output_dir = create_output_directory(2)
 
-    for p in np.linspace(0, 1, 11):
-        val = np.quantile(final_distances, p)
-        idx = np.argmin(np.abs(final_distances - val))
-        plt.plot(logs[idx]['distances'], label = f"{p:.2f}")
-        # pdb.set_trace()
-    plt.legend(title = "percentile")
-    plt.show()
+    final_distances = np.array([logs[player_id]['distances'][-1] for player_id in range(num_players)])
+    best_model_id = np.argmin(final_distances)
+
+    pdb.set_trace()
+
+    # plot learning of all
+    plot_multiple_dstance_learning(logs, output_dir / "overview.png")
+    plot_strategy_heatmap(players[best_model_id], save_path= output_dir / "strategy_heatmap.png")
+    plot_training_convergence((-1)*logs[best_model_id]['reward'], save_path= output_dir / "training_convergence.png")
 
 def run_experiment(config_path="config.yaml", output_dir=None, quick_mode=False, num_players=None):
         
@@ -419,7 +464,7 @@ def main():
 
 if __name__ == "__main__":
     try:
-        run_experiment2()
+        run_experiment3()
     except Exception as e:
         import traceback
         traceback.print_exc()

@@ -105,6 +105,88 @@ def play_game(player1, game, player2 = None):
         return memories[0], game.get_deal()
     return memories, game.get_deal()
 
+def train_self_play(config, player, game, gamma = 0.1):
+    """
+    note: baseline = (1-gamma) * baseline + gamma * new_reward
+
+    returns logs, player
+    """
+
+    optimizer = AdamW(player.parameters(), lr=config['learning_rate'])
+    rewards = torch.tensor([0,0],dtype = torch.float32, device = config['device'])
+    baselines = torch.tensor([-2.0, -2.0], dtype = torch.float32, device = config['device'])
+    loss = 0.0
+    
+    log = {
+        'reward': [],
+        'deals': [],
+        'player_ids': [],
+        'actions': [],
+        'distances': [],
+    }
+    
+    progress_bar = tqdm(range(config['train_steps']))
+    
+
+    for game_id in progress_bar:
+
+        memories, deal = play_game(
+            player1 = player, 
+            player2 = player,
+            game = game
+        )
+         # isolate first players memory
+
+        # log the episode
+        
+        log['reward'].append(memories[0]['reward'].detach().clone().to(torch.float32).to(config['device']))
+        log['player_ids'].append(0)  # always player 0
+        log['deals'].append(torch.tensor(deal))
+        log['actions'].append(([memories[0]['actions']], memories[1]['actions']))  # placeholder
+        
+        # compute loss for P1 (REINFORCE)
+        for i in range(2):
+            final_reward = memories[i]['reward']
+            game_reward = -1 * ((memories[i]['log_probs'] * final_reward).sum())
+
+            game_advantage = final_reward - baselines[i]
+            game_loss = -1 * ((memories[i]['log_probs'] * game_advantage).sum())
+
+            rewards[i] = rewards[i] + game_reward
+            loss = loss + game_loss
+            # pdb.set_trace()
+        
+
+        if (game_id + 1) % config['batch_size'] == 0:
+            rewards = rewards / (2 * config['batch_size'])
+            loss = loss / (2 * config['batch_size'])
+            baselines = 0.99 * baselines + 0.01 * rewards
+
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
+
+            loss = 0
+            rewards = torch.tensor([0,0],dtype = torch.float32, device = config['device'])
+            baselines = torch.tensor([-2.0, -2.0], dtype = torch.float32, device = config['device'])
+
+            distance1, distance2 = distance_from_optimal(player)
+            log['distances'].append(distance1 + distance2)
+        
+        # progress bar update
+        if (game_id + 1) % 100 == 0:
+            recent_reward = [log['reward'][i].item() for i in range(max(0, len(log['reward'])-1000), len(log['reward']))]
+            avg_reward = np.mean(recent_reward) if recent_reward else 0.0
+            progress_bar.set_postfix({'avg_reward': f'{avg_reward:.4f}'})
+    
+    log['reward'] = torch.stack(log['reward'])
+    log['player_ids'] = torch.tensor(log['player_ids'], device=config['device'])
+    # log['actions'] = torch.stack(log['actions'])
+    log['deals'] = torch.stack(log['deals'])
+    
+    return player, log
+
+
 def train(config, players):
     """
     train the two models
@@ -118,6 +200,7 @@ def train(config, players):
 
     # set up
     optimizers = [AdamW(players[i].parameters(), lr = config['learning_rate']) for i in range(len(players))]
+    baselines = [-2 for _ in range(len(players))]
     log = {
         'reward': [],
         'deal': [],
@@ -125,7 +208,7 @@ def train(config, players):
         'actions': [],
     }
     progress_bar = tqdm(range(config['train_steps']))
-    loss = torch.tensor(0.0, device=config['device'])
+    reward = torch.tensor(0.0, device=config['device'])
     player_id = 0
 
     for game_id in progress_bar:
@@ -143,22 +226,23 @@ def train(config, players):
                 
             # loss and backprop
             # CHECK MAKE SURE THIS LOSS FUNCTION IS OPTIMAL
-            game_loss = -1 * ((memories['log_probs'] * reward).sum())
-            loss = loss + game_loss
+            game_reward = -1 * ((memories['log_probs'] * reward).sum())
+            reward = reward + game_reward
 
             if (game_id + 1) % config['batch_size'] == 0:
-                loss.backward()
+                baselines[player_id]
+                reward.backward()
                 optimizers[player_id].step()
 
                 optimizers[player_id].zero_grad()
-                loss = torch.tensor(0.0, device=config['device'])
+                reward = torch.tensor(0.0, device=config['device'])
 
                 player_id += 1
                 player_id %= num_players
 
     for key in ('player_ids', "reward"):
         log[key] = torch.tensor(log[key])
-    return log
+    return player, log
 
 
 def train_vs_optimal_bot(config, player, game):
@@ -261,26 +345,33 @@ if __name__ == '__main__':
 
         kuhn = KuhnPoker()
 
-        # test train vs optimal bot
+        # # test train vs optimal bot
+        # player = create_kuhn_player(config['device'])
+        # player, log = train_vs_optimal_bot(config, player, kuhn)
+        # print(f"distance: {distance_from_optimal(player)[0]}")
+        # print(f"probabilities: {torch.sigmoid(player[0].weight)} (note remember to ignore the probs for when its player2)")
+        # plt.plot(log['distances'])
+        # plt.show()
+        # pdb.set_trace()
+
         player = create_kuhn_player(config['device'])
-        player, log = train_vs_optimal_bot(config, player, kuhn)
+        player, log = train_self_play(config, player, kuhn)
         print(f"distance: {distance_from_optimal(player)[0]}")
         print(f"probabilities: {torch.sigmoid(player[0].weight)} (note remember to ignore the probs for when its player2)")
         plt.plot(log['distances'])
         plt.show()
-        
         pdb.set_trace()
 
         # test self play
         # make players
-        num_players = 4
-        players = [create_kuhn_player(config['device']) for i in range(num_players)]
+        # num_players = 4
+        # players = [create_kuhn_player(config['device']) for i in range(num_players)]
 
-        # train
-        log = train(config, players)
+        # # train
+        # log = train(config, players)
 
-        print("\nTraining complete!")
-        print(f"Final reward shape: {log['reward'].shape}")
+        # print("\nTraining complete!")
+        # print(f"Final reward shape: {log['reward'].shape}")
 
         pdb.set_trace()
     except:
