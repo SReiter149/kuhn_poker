@@ -7,8 +7,8 @@ game:
 
 training:
   device: "cpu"
-  num_players: 10
-  train_steps: 32000
+  num_players: 3
+  train_steps: 1600
   learning_rate: 0.01
   batch_size: 32
   # log_window: 10000

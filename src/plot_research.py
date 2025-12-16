@@ -99,7 +99,7 @@ def plot_strategy_heatmap_p2(
         state = np.zeros(12, dtype=np.float32)
         state[offset + card_idx] = 1
         state_t = torch.FloatTensor(state).unsqueeze(0).to(device)
-        prob_one = player_model(state_t)
+        prob_one = player_model(state_t).detach()
         prob_zero = 1.0 - prob_one
         return np.array([prob_zero, prob_one])
 
@@ -115,8 +115,9 @@ def plot_strategy_heatmap_p2(
         ax = axes[idx]
         probs_matrix = np.zeros((3, 2))
         # pdb.set_trace()
-        for card_idx, _ in enumerate(cards):
-            probs_matrix[card_idx] = get_action_probs(card_idx, offset).squeeze(1)
+        with torch.no_grad():
+            for card_idx, _ in enumerate(cards):
+                probs_matrix[card_idx] = get_action_probs(card_idx, offset).squeeze()
 
         im = ax.imshow(probs_matrix, cmap='RdYlGn', aspect='auto',
                        vmin=0, vmax=1, interpolation='nearest')
