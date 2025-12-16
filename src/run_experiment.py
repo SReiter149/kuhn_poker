@@ -5,6 +5,7 @@ import yaml
 import json
 import numpy as np
 import torch
+from torch.distributions import Normal, Uniform
 from datetime import datetime
 import argparse
 import pdb
@@ -12,7 +13,7 @@ from pathlib import Path
 
 from matplotlib import pyplot as plt
 
-from train import train, train_vs_optimal_bot, train_self_play
+from train import train_vs_optimal_bot, train_self_play
 from game import KuhnPoker
 from models import create_kuhn_player
 from analyze import analyze_strategy, distance_from_optimal
@@ -110,7 +111,106 @@ def analyze_single_player_strategy(player, device='cpu'):
     
     return metrics
 
+def run_experiment4(config_path = "config4.yaml"):
+    """
+    fixed parameters
+    learning rate = 0.1
+    steps = 3200
+    """
+
+    # set up train
+    with open(config_path, "r") as f:
+        config = yaml.safe_load(f)
+    torch.manual_seed(config['seed'])
+
+    train_config = config['training']
+    game = KuhnPoker()
+
+    num_players = train_config['num_players']
+    players = [create_kuhn_player(train_config['device']) for i in range(num_players)]
+    logs = []
+    gamma_distribution = Uniform(0, 1)
+    step_size_distribution = Uniform(0,100)
+    learning_rate_exp_distribution = Uniform(-3, 0)
+    configs = []
+
+    # train
+    for player_id in range(num_players):
+        config['gamma'] = gamma_distribution.sample()
+        config['step_size'] = step_size_distribution.sample()
+        config['learning_rate'] = 10 ** learning_rate_exp_distribution.sample()
+        configs.append(config.copy())
+        
+        player, train_log = train_self_play(train_config, players[player_id], game)
+        logs.append(train_log)
+        players[player_id] = player
+        print(distance_from_optimal(player))
+
+    # analysis
+    output_dir = create_output_directory(4)
+
+    final_distances = np.array([logs[player_id]['distances'][-1] for player_id in range(num_players)])
+    best_model_id = np.argmin(final_distances)
+
+    # plot learning of all
+    plot_multiple_dstance_learning(logs, output_dir / "overview.png")
+
+    # plot best model
+    plot_strategy_heatmap(players[best_model_id], save_path= output_dir / "p1_strategy_heatmap.png")
+    plot_strategy_heatmap_p2(players[best_model_id], save_path= output_dir / "p2_strategy_heatmap.png")
+    plot_training_convergence((-1)*logs[best_model_id]['reward'], save_path= output_dir / "training_convergence.png")
+
+    # best hyperparameters
+    sorted_ids = np.argsort(-final_distances)
+    sorted_distances = np.array([final_distances[id] for id in sorted_ids])
+    sorted_gammas = np.array([configs[id]['gamma'] for id in sorted_ids])
+    sorted_step_sizes = np.array([configs[id]['step_size'] for id in sorted_ids])
+    sorted_learning_rates = np.array([torch.log10(configs[id]["learning_rate"]) for id in sorted_ids])
+
+    plt.scatter(sorted_distances, sorted_gammas)
+    plt.title("distances vs gamma")
+    plt.xlabel("distances")
+    plt.ylabel("gamma")
+    plt.savefig(output_dir / "gammas.png")
+    plt.close()
+
+    plt.scatter(sorted_distances, sorted_step_sizes)
+    plt.title("distances vs step_size")
+    plt.xlabel("distances")
+    plt.ylabel("step size")
+    plt.savefig(output_dir / "step_sizes.png")
+   
+    plt.close()
+
+    plt.scatter(sorted_distances, sorted_learning_rates)
+    plt.title("distances vs learning rates")
+    plt.xlabel("distances")
+    plt.ylabel("learning rates")
+    plt.savefig(output_dir / "learning_rates.png")
+    plt.close()
+
+    fig = plt.figure()
+    ax = fig.add_subplot(projection='3d')
+
+    sc = ax.scatter(sorted_gammas, sorted_step_sizes, sorted_learning_rates, c=sorted_distances)
+    fig.colorbar(sc, ax=ax, label='distance')
+
+    ax.set_xlabel('gamma')
+    ax.set_ylabel('step_size')
+    ax.set_zlabel('log10(gamma)')
+    plt.savefig(output_dir / 'hyperparameters.png')
+    plt.show()
+    plt.close()
+
+    pdb.set_trace()
+
 def run_experiment3(config_path = "config3.yaml"):
+    """
+    fixed parameters
+    learning rate = 0.1
+    steps = 3200
+    """
+
     # set up train
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
@@ -125,6 +225,7 @@ def run_experiment3(config_path = "config3.yaml"):
 
         # train
     for player_id in range(num_players):
+        
         player, train_log = train_self_play(train_config, players[player_id], game)
         logs.append(train_log)
         players[player_id] = player

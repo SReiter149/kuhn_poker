@@ -2,6 +2,7 @@ import torch
 from torch.nn import Linear, Sequential, Sigmoid
 from torch.distributions import Categorical, Bernoulli
 from torch.optim import AdamW
+from torch.optim.lr_scheduler import StepLR
 torch.autograd.set_detect_anomaly(True)
 
 import numpy as np
@@ -113,6 +114,7 @@ def train_self_play(config, player, game, gamma = 0.1):
     """
 
     optimizer = AdamW(player.parameters(), lr=config['learning_rate'])
+    scheduler = StepLR(optimizer=optimizer, step_size = config['step_size'], gamma = config['gamma'])
     rewards = torch.tensor([0,0],dtype = torch.float32, device = config['device'])
     baselines = torch.tensor([-2.0, -2.0], dtype = torch.float32, device = config['device'])
     loss = 0.0
@@ -160,24 +162,27 @@ def train_self_play(config, player, game, gamma = 0.1):
         if (game_id + 1) % config['batch_size'] == 0:
             rewards = rewards / (2 * config['batch_size'])
             loss = loss / (2 * config['batch_size'])
-            baselines = 0.99 * baselines + 0.01 * rewards
+            baselines = (1-gamma) * baselines + gamma * rewards
 
             loss.backward()
             optimizer.step()
+            scheduler.step()
             optimizer.zero_grad()
+
+            
+            distance1, distance2 = distance_from_optimal(player)
+            distance = distance1 + distance2
+            log['distances'].append(distance)
+        
+            progress_bar.set_postfix({
+                'loss': f'{loss:.4f}',
+                'distance': f'{distance:.4f}'
+            })
 
             loss = 0
             rewards = torch.tensor([0,0],dtype = torch.float32, device = config['device'])
             baselines = torch.tensor([-2.0, -2.0], dtype = torch.float32, device = config['device'])
 
-            distance1, distance2 = distance_from_optimal(player)
-            log['distances'].append(distance1 + distance2)
-        
-        # progress bar update
-        if (game_id + 1) % 100 == 0:
-            recent_reward = [log['reward'][i].item() for i in range(max(0, len(log['reward'])-1000), len(log['reward']))]
-            avg_reward = np.mean(recent_reward) if recent_reward else 0.0
-            progress_bar.set_postfix({'avg_reward': f'{avg_reward:.4f}'})
     
     log['reward'] = torch.stack(log['reward'])
     log['player_ids'] = torch.tensor(log['player_ids'], device=config['device'])
@@ -187,62 +192,62 @@ def train_self_play(config, player, game, gamma = 0.1):
     return player, log
 
 
-def train(config, players):
-    """
-    train the two models
-    train (config, [player1, player2])
+# def train(config, players):
+#     """
+#     train the two models
+#     train (config, [player1, player2])
 
-    returns:
-    - log (dict):
-        - p1_reward (list): the reward for the first player
-        - p1_score (list): the sum of the reward up to that point
-    """
+#     returns:
+#     - log (dict):
+#         - p1_reward (list): the reward for the first player
+#         - p1_score (list): the sum of the reward up to that point
+#     """
 
-    # set up
-    optimizers = [AdamW(players[i].parameters(), lr = config['learning_rate']) for i in range(len(players))]
-    baselines = [-2 for _ in range(len(players))]
-    log = {
-        'reward': [],
-        'deal': [],
-        'player_ids': [],
-        'actions': [],
-    }
-    progress_bar = tqdm(range(config['train_steps']))
-    reward = torch.tensor(0.0, device=config['device'])
-    player_id = 0
+#     # set up
+#     optimizers = [AdamW(players[i].parameters(), lr = config['learning_rate']) for i in range(len(players))]
+#     baselines = [-2 for _ in range(len(players))]
+#     log = {
+#         'reward': [],
+#         'deal': [],
+#         'player_ids': [],
+#         'actions': [],
+#     }
+#     progress_bar = tqdm(range(config['train_steps']))
+#     reward = torch.tensor(0.0, device=config['device'])
+#     player_id = 0
 
-    for game_id in progress_bar:
-            # play a game
-            memories, deal = play_game(players[player_id], kuhn)
-            log['deal'].append(deal)
-            log['actions'].append((memories['actions']))
-            log['reward'].append(memories['reward'])
-            log['player_ids'].append(player_id)
+#     for game_id in progress_bar:
+#             # play a game
+#             memories, deal = play_game(players[player_id], kuhn)
+#             log['deal'].append(deal)
+#             log['actions'].append((memories['actions']))
+#             log['reward'].append(memories['reward'])
+#             log['player_ids'].append(player_id)
             
-            if len(memories['reward']) > 1:
-                reward = torch.tensor([sum(memories['reward'][move:]) for move in range(len(memories['reward']))], device= config['device'], dtype = torch.float32)
-            else:
-                reward = torch.tensor(memories['reward'][0], device=config['device'], dtype=torch.float32)
+#             if len(memories['reward']) > 1:
+#                 reward = torch.tensor([sum(memories['reward'][move:]) for move in range(len(memories['reward']))], device= config['device'], dtype = torch.float32)
+#             else:
+#                 reward = torch.tensor(memories['reward'][0], device=config['device'], dtype=torch.float32)
                 
-            # loss and backprop
-            # CHECK MAKE SURE THIS LOSS FUNCTION IS OPTIMAL
-            game_reward = -1 * ((memories['log_probs'] * reward).sum())
-            reward = reward + game_reward
+#             # loss and backprop
+#             # CHECK MAKE SURE THIS LOSS FUNCTION IS OPTIMAL
+#             game_reward = -1 * ((memories['log_probs'] * reward).sum())
+#             reward = reward + game_reward
 
-            if (game_id + 1) % config['batch_size'] == 0:
-                baselines[player_id]
-                reward.backward()
-                optimizers[player_id].step()
+#             if (game_id + 1) % config['batch_size'] == 0:
+#                 baselines[player_id]
+#                 reward.backward()
+#                 optimizers[player_id].step()
 
-                optimizers[player_id].zero_grad()
-                reward = torch.tensor(0.0, device=config['device'])
+#                 optimizers[player_id].zero_grad()
+#                 reward = torch.tensor(0.0, device=config['device'])
 
-                player_id += 1
-                player_id %= num_players
+#                 player_id += 1
+#                 player_id %= num_players
 
-    for key in ('player_ids', "reward"):
-        log[key] = torch.tensor(log[key])
-    return player, log
+#     for key in ('player_ids', "reward"):
+#         log[key] = torch.tensor(log[key])
+#     return player, log
 
 
 def train_vs_optimal_bot(config, player, game):
@@ -312,12 +317,11 @@ def train_vs_optimal_bot(config, player, game):
             loss = torch.tensor(0.0, device=config['device'])
             distance = distance_from_optimal(player)[0]
             log['distances'].append(distance)
-        
-        # progress bar update
-        if (game_id + 1) % 100 == 0:
-            recent_reward = [log['reward'][i].item() for i in range(max(0, len(log['reward'])-1000), len(log['reward']))]
-            avg_reward = np.mean(recent_reward) if recent_reward else 0.0
-            progress_bar.set_postfix({'avg_reward': f'{avg_reward:.4f}'})
+
+            progress_bar.set_postfix({
+                'loss': f'{loss:.4f}',
+                'distance': f'{distance:.4f}'
+            })
     
     log['reward'] = torch.stack(log['reward'])
     log['player_ids'] = torch.tensor(log['player_ids'], device=config['device'])
@@ -337,10 +341,12 @@ if __name__ == '__main__':
             'replay_buffer_capacity': 1_000,
             'minibatch_size': 10,
             'warmup_steps': 100,
-            'train_steps': 100_000,
+            'train_steps': 6400,
             'log_window': 100,
             'batch_size': 32,
-            'learning_rate': 0.01
+            'learning_rate': 0.2,
+            'gamma': 0.9,
+            'step_size': 20
         }
 
         kuhn = KuhnPoker()
@@ -356,7 +362,8 @@ if __name__ == '__main__':
 
         player = create_kuhn_player(config['device'])
         player, log = train_self_play(config, player, kuhn)
-        print(f"distance: {distance_from_optimal(player)[0]}")
+        distance1, distance2 = distance_from_optimal(player)
+        print(f"distance: {distance1 + distance2}")
         print(f"probabilities: {torch.sigmoid(player[0].weight)} (note remember to ignore the probs for when its player2)")
         plt.plot(log['distances'])
         plt.show()
