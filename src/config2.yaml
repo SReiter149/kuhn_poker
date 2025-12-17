@@ -9,6 +9,6 @@ training:
   device: "cpu"
   num_players: 100
   train_steps: 3200
-  learning_rate: 0.2
+  learning_rate: 0.05
   batch_size: 32
   # log_window: 10000

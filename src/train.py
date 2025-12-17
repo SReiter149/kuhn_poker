@@ -115,7 +115,7 @@ def train_self_play(config, player, game, gamma = 0.1):
 
     optimizer = AdamW(player.parameters(), lr=config['learning_rate'])
     scheduler = StepLR(optimizer=optimizer, step_size = config['step_size'], gamma = config['gamma'])
-    rewards = torch.tensor([0,0],dtype = torch.float32, device = config['device'])
+    reward = torch.tensor([0,0],dtype = torch.float32, device = config['device'])
     baselines = torch.tensor([-2.0, -2.0], dtype = torch.float32, device = config['device'])
     loss = 0.0
     
@@ -154,15 +154,15 @@ def train_self_play(config, player, game, gamma = 0.1):
             game_advantage = final_reward - baselines[i]
             game_loss = -1 * ((memories[i]['log_probs'] * game_advantage).sum())
 
-            rewards[i] = rewards[i] + game_reward
+            reward[i] = reward[i] + game_reward
             loss = loss + game_loss
             # pdb.set_trace()
         
 
         if (game_id + 1) % config['batch_size'] == 0:
-            rewards = rewards / (2 * config['batch_size'])
+            reward = reward / (2 * config['batch_size'])
             loss = loss / (2 * config['batch_size'])
-            baselines = (1-gamma) * baselines + gamma * rewards
+            baselines = (1-gamma) * baselines + gamma * reward
 
             loss.backward()
             optimizer.step()
@@ -180,7 +180,7 @@ def train_self_play(config, player, game, gamma = 0.1):
             })
 
             loss = 0
-            rewards = torch.tensor([0,0],dtype = torch.float32, device = config['device'])
+            reward = torch.tensor([0,0],dtype = torch.float32, device = config['device'])
             baselines = torch.tensor([-2.0, -2.0], dtype = torch.float32, device = config['device'])
 
     
@@ -191,6 +191,64 @@ def train_self_play(config, player, game, gamma = 0.1):
     
     return player, log
 
+def train(config, players):
+    """
+    train the two models
+    train (config, [player1, player2])
+
+    returns:
+    - log (dict):
+        - p1_rewards (list): the reward for the first player
+        - p1_score (list): the sum of the reward up to that point
+    """
+
+    # set up
+    optimizers = [AdamW(players[i].parameters(), lr = config['learning_rate']) for i in range(len(players))]
+    log = {
+        'reward': [],
+        'deal': [],
+        'player1_ids': [],
+        'player2_ids': [],
+        'actions': [],
+    }
+    progress_bar = tqdm(range(config['train_steps']))
+    loss = [torch.tensor(0.0, device=config['device']) for _ in players]
+
+    player1_id, player2_id = torch.randperm(len(players))[:2]
+
+    for game_id in progress_bar:
+        # play a game
+        memory, deal = play_game(
+            player1 = players[player1_id], 
+            player2 = players[player2_id], 
+            game= kuhn)
+        log['deal'].append(deal)
+        log['actions'].append((memory[0]['actions'],memory[1]['actions']))
+        log['reward'].append(memory[0]['reward'])
+        log['player1_ids'].append(player1_id)
+        log['player2_ids'].append(player2_id)
+            
+        # back propogation
+        for player_num, player_id in enumerate([player1_id, player2_id]):
+            # get undiscounted reward (undiscounted since number of moves shouldn't matter)
+            reward = memory[player_num]['reward'].detach().clone()
+                
+            # loss and backprop
+            # CHECK MAKE SURE THIS LOSS FUNCTION IS OPTIMAL
+            game_loss = -1 * ((memory[player_num]['log_probs'] * reward).sum())
+            loss[player_num] = loss[player_num] + game_loss
+
+            if (game_id + 1) % config['batch_size'] == 0:
+                loss[player_num].backward()
+                optimizers[player_id].step()
+
+                optimizers[player_id].zero_grad()
+                loss = [torch.tensor(0.0, device=config['device']) for _ in range(2)]
+
+                player1_id, player2_id = torch.randperm(len(players))[:2]
+    for key in ('player1_ids', 'player2_ids', "reward"):
+        log[key] = torch.tensor(log[key])
+    return log
 
 # def train(config, players):
 #     """

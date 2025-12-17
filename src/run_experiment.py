@@ -13,7 +13,7 @@ from pathlib import Path
 
 from matplotlib import pyplot as plt
 
-from train import train_vs_optimal_bot, train_self_play
+from train import train_vs_optimal_bot, train_self_play, train
 from game import KuhnPoker
 from models import create_kuhn_player
 from analyze import analyze_strategy, distance_from_optimal
@@ -25,7 +25,8 @@ from plot_research import (
     plot_strategy_heatmap_p2,
     plot_strategy_comparison_nash,
     plot_players_comparison,
-    plot_multiple_dstance_learning
+    plot_multiple_dstance_learning,
+    plot_hyperparameters
 )
 
 def create_output_directory(experiment_number = 1, base_dir="./results"):
@@ -161,48 +162,9 @@ def run_experiment4(config_path = "config4.yaml"):
     plot_training_convergence((-1)*logs[best_model_id]['reward'], save_path= output_dir / "training_convergence.png")
 
     # best hyperparameters
-    sorted_ids = np.argsort(-final_distances)
-    sorted_distances = np.array([final_distances[id] for id in sorted_ids])
-    sorted_gammas = np.array([configs[id]['gamma'] for id in sorted_ids])
-    sorted_step_sizes = np.array([configs[id]['step_size'] for id in sorted_ids])
-    sorted_learning_rates = np.array([torch.log10(configs[id]["learning_rate"]) for id in sorted_ids])
+    plot_hyperparameters(configs, final_distances, output_dir)
 
-    plt.scatter(sorted_distances, sorted_gammas)
-    plt.title("distances vs gamma")
-    plt.xlabel("distances")
-    plt.ylabel("gamma")
-    plt.savefig(output_dir / "gammas.png")
-    plt.close()
-
-    plt.scatter(sorted_distances, sorted_step_sizes)
-    plt.title("distances vs step_size")
-    plt.xlabel("distances")
-    plt.ylabel("step size")
-    plt.savefig(output_dir / "step_sizes.png")
-   
-    plt.close()
-
-    plt.scatter(sorted_distances, sorted_learning_rates)
-    plt.title("distances vs learning rates")
-    plt.xlabel("distances")
-    plt.ylabel("learning rates")
-    plt.savefig(output_dir / "learning_rates.png")
-    plt.close()
-
-    fig = plt.figure()
-    ax = fig.add_subplot(projection='3d')
-
-    sc = ax.scatter(sorted_gammas, sorted_step_sizes, sorted_learning_rates, c=sorted_distances)
-    fig.colorbar(sc, ax=ax, label='distance')
-
-    ax.set_xlabel('gamma')
-    ax.set_ylabel('step_size')
-    ax.set_zlabel('log10(gamma)')
-    plt.savefig(output_dir / 'hyperparameters.png')
-    plt.show()
-    plt.close()
-
-    pdb.set_trace()
+    # pdb.set_trace()
 
 def run_experiment3(config_path = "config3.yaml"):
     """
@@ -243,7 +205,7 @@ def run_experiment3(config_path = "config3.yaml"):
     plot_strategy_heatmap_p2(players[best_model_id], save_path= output_dir / "p2_strategy_heatmap.png")
     plot_training_convergence((-1)*logs[best_model_id]['reward'], save_path= output_dir / "training_convergence.png")
 
-    pdb.set_trace()
+    # pdb.set_trace()
 
 def run_experiment2(config_path = "config2.yaml"):   
     # set up train
@@ -271,7 +233,7 @@ def run_experiment2(config_path = "config2.yaml"):
     final_distances = np.array([logs[player_id]['distances'][-1] for player_id in range(num_players)])
     best_model_id = np.argmin(final_distances)
 
-    pdb.set_trace()
+    # pdb.set_trace()
 
     # plot learning of all
     plot_multiple_dstance_learning(logs, output_dir / "overview.png")
@@ -563,7 +525,11 @@ def main():
 
 if __name__ == "__main__":
     try:
+        run_experiment()
+        run_experiment2()
         run_experiment3()
+        run_experiment4()
+        pdb.set_trace()
     except Exception as e:
         import traceback
         traceback.print_exc()

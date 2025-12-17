@@ -11,20 +11,75 @@ plt.style.use('seaborn-v0_8-paper')
 sns.set_palette("husl")
 ALPHA_CHAR = '\u03B1'
 
+def plot_hyperparameters(configs, final_distances, save_dir = None):
+    sorted_ids = np.argsort(-final_distances)
+    sorted_distances = np.array([final_distances[id] for id in sorted_ids])
+    sorted_gammas = np.array([configs[id]['gamma'] for id in sorted_ids])
+    sorted_step_sizes = np.array([configs[id]['step_size'] for id in sorted_ids])
+    sorted_learning_rates = np.array([torch.log10(configs[id]["learning_rate"]) for id in sorted_ids])
+
+    plt.scatter(sorted_distances, sorted_gammas)
+    plt.title("Distances vs Gamma")
+    plt.xlabel("Distances")
+    plt.ylabel("Gamma")
+    plt.savefig(save_dir / "gammas.png", dpi=300, bbox_inches='tight')
+    plt.close()
+
+    plt.scatter(sorted_distances, sorted_step_sizes)
+    plt.title("Distances vs Step Size")
+    plt.xlabel("Distances")
+    plt.ylabel("Step size")
+    plt.savefig(save_dir / "step_sizes.png", dpi=300, bbox_inches='tight')
+   
+    plt.close()
+
+    plt.scatter(sorted_distances, sorted_learning_rates)
+    plt.title("Distances vs Learning Rates")
+    plt.xlabel("Distances")
+    plt.ylabel("Learning Rates")
+    plt.savefig(save_dir / "learning_rates.png", dpi=300, bbox_inches='tight')
+    plt.close()
+
+    fig = plt.figure()
+    ax = fig.add_subplot(projection='3d')
+
+    sc = ax.scatter(sorted_gammas, sorted_step_sizes, sorted_learning_rates, c=sorted_distances)
+    fig.colorbar(sc, ax=ax, label='Distance')
+
+    ax.set_xlabel('Gamma')
+    ax.set_ylabel('Step Size')
+    ax.set_zlabel('log10(Gamma)')
+    plt.savefig(save_dir / "hyerparameters.png", dpi=300, bbox_inches='tight')
+    plt.show()
+    plt.close()
+
 def plot_multiple_dstance_learning(logs, save_path):
+    from matplotlib.cm import ScalarMappable
+    from matplotlib.colors import Normalize
+
+
     final_distances = np.array([logs[player_id]['distances'][-1] for player_id in range(len(logs))])
+
+    cmap = plt.get_cmap("viridis")
+    fig, ax = plt.subplots()
 
     # plot learning of all
     for p in np.linspace(0, 1, 11):
-        val = np.quantile(final_distances, p)
+        val = np.quantile(final_distances, (1-p))
         idx = np.argmin(np.abs(final_distances - val))
-        plt.plot(logs[idx]['distances'], label = f"{p:.2f}")
-        # pdb.set_trace()
-    plt.legend(title = "percentile")
-    plt.title("training steps VS distance")
-    plt.xlabel("number of time back prop happened")
-    plt.ylabel("the distance from the optimal solution")
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        ax.plot(logs[idx]['distances'], color=cmap(p), label = f"{(1-p):.2f}",)
+
+
+    sm = ScalarMappable(cmap=cmap, norm=Normalize(0, 1))
+    sm.set_array([])
+
+    fig.colorbar(sm, ax=ax, label="Percentile")
+
+    ax.set_title("Training Steps VS Distance")
+    ax.set_xlabel("Backpropagation Count")
+    ax.set_ylabel("Distance to Optimal Solution")
+
+    fig.savefig(save_path, dpi=300, bbox_inches="tight")
 
 def exponential_moving_average(data: np.ndarray, window: int) -> np.ndarray:
     data = np.asarray(data, dtype=float)
@@ -146,6 +201,7 @@ def plot_strategy_heatmap_p2(
         print(f"Saved: {save_path}")
     else:
         plt.show()
+    plt.close()
 
 def plot_strategy_heatmap(
     player_model,

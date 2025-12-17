@@ -8,8 +8,8 @@ game:
 training:
   device: "cpu"
   num_players: 300
-  train_steps: 12800
-  learning_rate: 0.1
+  train_steps: 3200
+  learning_rate: 0.05
   batch_size: 32
   step_size: 20
   gamma: 1

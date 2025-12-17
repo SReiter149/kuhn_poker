@@ -7,5 +7,6 @@ training:
   device: "cpu"
   train_steps: 500000
   learning_rate: 0.002
+  lr: 0.002
   batch_size: 16
   log_window: 10000
